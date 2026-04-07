@@ -1,0 +1,29 @@
+/* Tailwind v4 — single import replaces @tailwind base/components/utilities */
+@import "tailwindcss";
+
+/* Custom design tokens — generates bg-primary, text-primary, font-headline, etc. */
+@theme {
+  --font-headline: "Noto Serif", serif;
+  --font-body: "Manrope", sans-serif;
+
+  --color-primary: #8f000d;
+  --color-primary-container: #b22222;
+}
+
+/* Class-based dark mode: adds .dark to <html> via ThemeContext */
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    font-family: var(--font-body);
+    @apply antialiased transition-colors duration-300;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
