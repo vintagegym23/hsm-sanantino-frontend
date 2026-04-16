@@ -14,7 +14,8 @@ import {
   Moon,
   Sun,
   Menu,
-  X
+  X,
+  Zap
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
@@ -22,7 +23,7 @@ import { cn } from '../lib/utils';
 export default function AdminDashboard() {
   const { token, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'categories' | 'items' | 'media'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'categories' | 'items' | 'media' | 'ticker'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,8 +44,19 @@ export default function AdminDashboard() {
   const [categoryFormData, setCategoryFormData] = useState({
     name: '',
     imageUrl: '',
+    subCategories: [] as string[],
   });
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
+  const [tickerItems, setTickerItems] = useState<string[]>([
+    'Freshly Crafted',
+    'Claypot Signature Blends',
+    'Authentic Hyderabadi Flavors',
+    'Open Daily For Dine-In & Takeaway',
+  ]);
+  const [newTickerItem, setNewTickerItem] = useState('');
+  const [editingTickerIndex, setEditingTickerIndex] = useState<number | null>(null);
+  const [editingTickerValue, setEditingTickerValue] = useState('');
+  const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp'] as const;
 
   const api = authApi(token ?? '');
 
@@ -75,12 +87,14 @@ export default function AdminDashboard() {
       setCategoryFormData({
         name: category.name,
         imageUrl: category.imageUrl || '',
+        subCategories: [],
       });
     } else {
       setEditingCategory(null);
       setCategoryFormData({
         name: '',
         imageUrl: '',
+        subCategories: [],
       });
     }
     setIsCategoryModalOpen(true);
@@ -305,6 +319,12 @@ export default function AdminDashboard() {
           >
             <ImageIcon size={20} /> Media
           </button>
+          <button
+            onClick={() => { setActiveTab('ticker'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'ticker' ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
+          >
+            <Zap size={20} /> Scrolling Bar
+          </button>
         </nav>
 
         <div className="p-4 border-t border-stone-200 dark:border-stone-800 space-y-2">
@@ -469,14 +489,6 @@ export default function AdminDashboard() {
                 <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Media Management</h2>
                 <p className="text-stone-500 text-sm mt-2">Manage the visual assets for your landing page and menu backgrounds.</p>
               </div>
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setIsMediaModalOpen(true)}
-                  className="bg-primary text-white px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-primary/30 hover:opacity-90 transition-all"
-                >
-                  <Plus size={18} /> Add Category Background
-                </button>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-12">
@@ -499,11 +511,21 @@ export default function AdminDashboard() {
                           <p className="font-bold uppercase tracking-widest text-xs text-primary">
                             {type === 'hero_video' ? 'Hero Video' : 'Hero Image'}
                           </p>
-                          {m ? (
-                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
-                          ) : (
-                            <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-1 rounded-full font-bold uppercase">Not Set</span>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {m ? (
+                              <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
+                            ) : (
+                              <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-1 rounded-full font-bold uppercase">Not Set</span>
+                            )}
+                            {m && (
+                              <button 
+                                onClick={() => handleDeleteMedia(m.id)}
+                                className="p-1.5 text-stone-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="aspect-video rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800 relative group">
                           {m ? (
@@ -545,38 +567,53 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Category Backgrounds */}
+              {/* Specials Section */}
               <div className="space-y-6">
                 <div className="border-b border-stone-200 dark:border-stone-800 pb-4">
-                  <h3 className="text-xl font-bold text-stone-900 dark:text-white">Category Backgrounds</h3>
-                  <p className="text-sm text-stone-500">Backgrounds that appear when a specific category is selected in the menu.</p>
+                  <h3 className="text-xl font-bold text-stone-900 dark:text-white">Specials Section</h3>
+                  <p className="text-sm text-stone-500">Image displayed in the specials section on the homepage if it exists.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {categories.map((cat) => (
-                    <div key={cat.id} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
-                      <div className="flex justify-between items-center">
-                        <p className="font-bold uppercase tracking-widest text-xs text-primary">{cat.name}</p>
-                        {cat.imageUrl && (
-                          <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Set</span>
-                        )}
-                      </div>
-                      <div className="aspect-video rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800 relative group">
-                        {cat.imageUrl ? (
-                          <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-stone-400 text-xs italic">No Background</div>
-                        )}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <button 
-                            onClick={() => handleCategoryBackgroundChange(cat.id)}
-                            className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold shadow-lg"
-                          >
-                            Change
-                          </button>
+                <div>
+                  {(() => {
+                    const specialsMedia = media.find(m => m.type === 'special_section');
+                    return (
+                      <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
+                        <div className="flex justify-between items-center">
+                          <p className="font-bold uppercase tracking-widest text-xs text-primary">Specials Image</p>
+                          <div className="flex items-center gap-3">
+                            {specialsMedia ? (
+                              <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
+                            ) : (
+                              <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-1 rounded-full font-bold uppercase">Not Set</span>
+                            )}
+                            {specialsMedia && (
+                              <button 
+                                onClick={() => handleDeleteMedia(specialsMedia.id)}
+                                className="p-1.5 text-stone-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="aspect-video rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800 relative group">
+                          {specialsMedia ? (
+                            <img src={specialsMedia.url} alt="Specials" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-stone-400 text-xs italic">No image uploaded</div>
+                          )}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button 
+                              onClick={() => specialsMedia ? handleMediaChange(specialsMedia.id, 'special_section') : handleAddMedia('special_section')}
+                              className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold shadow-lg"
+                            >
+                              {specialsMedia ? 'Change' : 'Upload'} Image
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -634,6 +671,120 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {activeTab === 'ticker' && (
+          <div className="space-y-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Scrolling Bar Management</h2>
+                <p className="text-stone-500 text-sm mt-2">Manage the text phrases that appear in the scrolling bar at the top of the homepage hero section.</p>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
+              <div className="p-6 border-b border-stone-200 dark:border-stone-800">
+                <h3 className="text-xl font-bold text-stone-900 dark:text-white mb-4">Add New Phrase</h3>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={newTickerItem}
+                    onChange={(e) => setNewTickerItem(e.target.value)}
+                    placeholder="Enter a new phrase..."
+                    className="flex-1 px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newTickerItem.trim()) {
+                        setTickerItems([...tickerItems, newTickerItem.trim()]);
+                        setNewTickerItem('');
+                      }
+                    }}
+                    className="bg-primary text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary/30 hover:opacity-90 transition-all"
+                  >
+                    <Plus size={20} /> Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-3">
+                <h3 className="text-lg font-bold text-stone-900 dark:text-white mb-4">Phrases ({tickerItems.length})</h3>
+                {tickerItems.length === 0 ? (
+                  <p className="text-stone-500 text-center py-8">No phrases added yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {tickerItems.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between bg-stone-50 dark:bg-stone-800 p-4 rounded-xl border border-stone-200 dark:border-stone-700">
+                        <div className="flex-1">
+                          {editingTickerIndex === index ? (
+                            <input
+                              type="text"
+                              value={editingTickerValue}
+                              onChange={(e) => setEditingTickerValue(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg bg-white dark:bg-stone-700 border border-stone-300 dark:border-stone-600 focus:ring-2 focus:ring-primary outline-none dark:text-white"
+                            />
+                          ) : (
+                            <p className="text-stone-900 dark:text-white font-bold">{item}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          {editingTickerIndex === index ? (
+                            <>
+                              <button
+                                onClick={() => {
+                                  if (editingTickerValue.trim()) {
+                                    const updated = [...tickerItems];
+                                    updated[index] = editingTickerValue.trim();
+                                    setTickerItems(updated);
+                                    setEditingTickerIndex(null);
+                                  }
+                                }}
+                                className="px-3 py-2 bg-green-500 text-white rounded-lg font-bold text-sm hover:bg-green-600 transition-all"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingTickerIndex(null)}
+                                className="px-3 py-2 bg-stone-400 text-white rounded-lg font-bold text-sm hover:bg-stone-500 transition-all"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingTickerIndex(index);
+                                  setEditingTickerValue(item);
+                                }}
+                                className="p-2 text-stone-400 hover:text-primary transition-colors"
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTickerItems(tickerItems.filter((_, i) => i !== index));
+                                }}
+                                className="p-2 text-stone-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-6">
+              <p className="text-sm text-blue-900 dark:text-blue-200">
+                <span className="font-bold">💡 Tip:</span> These phrases will appear in the scrolling bar at the top of the homepage hero section. They will repeat continuously as the ticker scrolls from right to left.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Category Modal */}
         {isCategoryModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -643,7 +794,7 @@ export default function AdminDashboard() {
                   {editingCategory ? 'Edit Category' : 'Add Category'}
                 </h3>
                 <button onClick={() => setIsCategoryModalOpen(false)} className="text-stone-400 hover:text-stone-600">
-                  <LogOut size={24} />
+                  <X size={24} />
                 </button>
               </div>
               <form onSubmit={handleCategorySubmit} className="p-6 space-y-6">
@@ -655,6 +806,34 @@ export default function AdminDashboard() {
                     onChange={(e) => setCategoryFormData({ ...categoryFormData, name: e.target.value })}
                     className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-3">Sub-Categories</label>
+                  <div className="space-y-3">
+                    {SUB_CATEGORIES.map((subCat) => (
+                      <label key={subCat} className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={categoryFormData.subCategories.includes(subCat)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setCategoryFormData({
+                                ...categoryFormData,
+                                subCategories: [...categoryFormData.subCategories, subCat],
+                              });
+                            } else {
+                              setCategoryFormData({
+                                ...categoryFormData,
+                                subCategories: categoryFormData.subCategories.filter(s => s !== subCat),
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
+                        />
+                        <span className="text-sm font-bold text-stone-700 dark:text-stone-300">{subCat}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Background Image</label>
@@ -694,7 +873,7 @@ export default function AdminDashboard() {
                   {editingItem ? 'Edit Item' : 'Add New Item'}
                 </h3>
                 <button onClick={() => setIsItemModalOpen(false)} className="text-stone-400 hover:text-stone-600">
-                  <LogOut size={24} />
+                  <X size={24} />
                 </button>
               </div>
               <form onSubmit={handleItemSubmit} className="p-6 space-y-6">
@@ -758,44 +937,6 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
-        )}
-        {/* Media Modal */}
-        {isMediaModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-stone-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
-              <div className="p-6 border-b border-stone-200 dark:border-stone-800 flex justify-between items-center">
-                <h3 className="text-2xl font-bold text-stone-900 dark:text-white">Add Category Background</h3>
-                <button onClick={() => setIsMediaModalOpen(false)} className="text-stone-400 hover:text-stone-600">
-                  <LogOut size={24} />
-                </button>
-              </div>
-              <div className="p-6 space-y-6">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Select Category</label>
-                  <select 
-                    value={selectedCategoryId}
-                    onChange={(e) => setSelectedCategoryId(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
-                  >
-                    <option value="">Choose a category...</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  disabled={!selectedCategoryId}
-                  onClick={() => {
-                    handleCategoryBackgroundChange(selectedCategoryId);
-                    setIsMediaModalOpen(false);
-                  }}
-                  className="w-full bg-primary text-white px-6 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-primary/30 hover:opacity-90 transition-all disabled:opacity-50"
-                >
-                  Select File & Upload
-                </button>
-              </div>
             </div>
           </div>
         )}
