@@ -9,16 +9,22 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const isTheme = (value: string | null): value is Theme => value === 'dark' || value === 'light';
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('theme');
-    return (saved as Theme) || 'dark';
+    if (isTheme(saved)) {
+      return saved;
+    }
+
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
-    root.classList.add(theme);
+    root.classList.toggle('dark', theme === 'dark');
+    root.style.colorScheme = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
 

@@ -18,7 +18,7 @@ export interface Item {
 
 export interface Media {
   id: string;
-  type: 'hero_video' | 'hero_image' | 'menu_bg';
+  type: 'hero_video' | 'hero_image' | 'menu_bg' | 'special_section';
   url: string;
 }
 

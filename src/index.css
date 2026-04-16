@@ -18,6 +18,10 @@
     font-family: var(--font-body);
     @apply antialiased transition-colors duration-300;
   }
+
+  button:hover {
+    cursor: pointer;
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -26,4 +30,65 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@keyframes heroTickerScroll {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-25%, 0, 0);
+  }
+}
+
+.hero-ticker-shell {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 1.5rem,
+    black calc(100% - 1.5rem),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 1.5rem,
+    black calc(100% - 1.5rem),
+    transparent
+  );
+}
+
+.hero-ticker-track {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  height: 100%;
+  align-items: center;
+  animation: heroTickerScroll 30s linear infinite;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.hero-ticker-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.hero-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.hero-ticker-item::after {
+  content: "\2022";
+  margin: 0 clamp(1.5rem, 4vw, 3rem);
+  color: color-mix(in srgb, white 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-ticker-track {
+    animation: none;
+  }
 }
