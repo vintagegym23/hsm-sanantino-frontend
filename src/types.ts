@@ -2,6 +2,7 @@ export interface Category {
   id: string;
   name: string;
   imageUrl?: string;
+  subCategories?: string[] | null;
   _count?: {
     items: number;
   };
@@ -14,6 +15,7 @@ export interface Item {
   price: number;
   categoryId: string;
   category?: Category;
+  subCategory?: string;
 }
 
 export interface Media {

@@ -6,11 +6,10 @@ import { ItemCard } from '../components/ItemCard';
 import { CategoryNav } from '../components/CategoryNav';
 import { SubCategoryNav } from '../components/SubCategoryNav';
 import { useTheme } from '../context/ThemeContext';
-import { cn } from '../lib/utils';
+import { cn, normalizeSubCategories } from '../lib/utils';
 import { Moon, Sun, ChevronDown } from 'lucide-react';
 import logo from "../images/logo-white.png";
-
-const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp'] as const;
+import { categorySubCategoriesMap } from '../lib/categorySubCategories';
 
 const heroTickerText = [
   'Freshly Crafted',
@@ -57,7 +56,12 @@ export default function MenuView() {
           api.get('/api/items'),
           api.get('/api/media'),
         ]);
-        setCategories(catRes.data);
+        setCategories(
+          catRes.data.map((cat: Category) => ({
+            ...cat,
+            subCategories: normalizeSubCategories(cat.subCategories),
+          }))
+        );
         setItems(itemRes.data);
         setMedia(mediaRes.data);
       } catch (error) {
@@ -75,22 +79,77 @@ export default function MenuView() {
     }
 
     const itemName = item.name.toLowerCase();
+    const categoryName = activeCategoryData?.name || '';
 
-    if (subCategory === 'Veg') {
-      const nonVegPattern = /(chicken|goat|lamb|mutton|fish|shrimp|prawn|jhinga|egg|gosht|nalli|natukodi)/;
-      return !nonVegPattern.test(itemName);
+    // Handle category-specific sub-category matching
+    if (categoryName === 'Dosas') {
+      const dosaMatchers: Record<string, RegExp> = {
+        'Vegetarian Dosa': /veg|vegetarian/i,
+        'Spicy Non-Veg Dosa': /spicy|non-?veg|chicken|goat|fish|egg/i,
+        'Village Special Dosa': /village/i,
+        'Kids Special Dosa': /kids/i,
+        'Extras (for Dosa)': /extras?/i,
+      };
+      const matcher = dosaMatchers[subCategory];
+      return matcher ? matcher.test(itemName) : true;
     }
 
+    if (categoryName === 'Mandi') {
+      // Mandi has both protein and flavor options
+      const mandiMatchers: Record<string, RegExp> = {
+        'Paneer': /paneer/i,
+        'Egg': /egg/i,
+        'Chicken': /chicken/i,
+        'Goat': /goat|gosht/i,
+        'Shrimp': /shrimp|prawn|jhinga/i,
+        'Nalli Gosht': /nalli|gosht/i,
+        'Juicy': /juicy/i,
+        'Arabian': /arabian/i,
+        'Malai': /malai/i,
+        'Charminar Grilled': /charminar|grilled/i,
+      };
+      const matcher = mandiMatchers[subCategory];
+      return matcher ? matcher.test(itemName) : true;
+    }
+
+    if (categoryName === 'Beer') {
+      const beerMatchers: Record<string, RegExp> = {
+        'Bottle Beer': /bottle/i,
+        'East Indian Beer': /east|indian/i,
+        'Draft Beer': /draft/i,
+      };
+      const matcher = beerMatchers[subCategory];
+      return matcher ? matcher.test(itemName) : true;
+    }
+
+    if (categoryName === 'Wine') {
+      const wineMatchers: Record<string, RegExp> = {
+        'Sparkling': /sparkling|prosecco|champagne/i,
+        'White': /white|riesling|sauvignon/i,
+        'Red': /red|cabernet|merlot|pinot/i,
+        'Sweet': /sweet|dessert/i,
+        'Fruit': /fruit|berry/i,
+        'House Special': /house|special/i,
+      };
+      const matcher = wineMatchers[subCategory];
+      return matcher ? matcher.test(itemName) : true;
+    }
+
+    // Default matching for common sub-categories
     const subCategoryMatchers: Record<string, RegExp> = {
-      paneer: /paneer/,
-      egg: /egg/,
-      chicken: /chicken/,
-      goat: /(goat|lamb|mutton|gosht|nalli)/,
-      fish: /(fish|pomfret)/,
-      shrimp: /(shrimp|prawn|jhinga)/,
+      'Veg': /(veg|vegetarian)/i,
+      'Gobi': /gobi|cauliflower/i,
+      'Paneer': /paneer/i,
+      'Mushroom': /mushroom/i,
+      'Egg': /egg/i,
+      'Chicken': /chicken/i,
+      'Goat': /(goat|lamb|mutton|gosht|nalli)/i,
+      'Fish': /(fish|pomfret)/i,
+      'Shrimp': /(shrimp|prawn|jhinga)/i,
+      'HSM Signature (Goat)': /hsm|signature|goat/i,
     };
 
-    const matcher = subCategoryMatchers[subCategory.toLowerCase()];
+    const matcher = subCategoryMatchers[subCategory];
     return matcher ? matcher.test(itemName) : true;
   };
 
@@ -142,14 +201,14 @@ export default function MenuView() {
         )}
         <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
 
-        <div className="hero-ticker-shell absolute top-0 left-0 right-0 z-30 h-12 overflow-hidden border-b border-white/20 bg-black/45 backdrop-blur-md">
+        <div className="hero-ticker-shell absolute top-0 left-0 right-0 z-30 h-12 overflow-hidden border-b border-amber-300 bg-amber-100 backdrop-blur-md">
           <div className="hero-ticker-track">
             {[0, 1, 2, 3].map((groupIndex) => (
               <div key={groupIndex} className="hero-ticker-group" aria-hidden={groupIndex > 0}>
                 {heroTickerText.map((text) => (
                   <span
                     key={`${text}-${groupIndex}`}
-                    className="hero-ticker-item text-[11px] md:text-xs font-bold uppercase tracking-[0.24em] text-stone-200"
+                    className="hero-ticker-item text-[11px] md:text-xs font-bold uppercase tracking-[0.24em] text-amber-900"
                   >
                     {text}
                   </span>
@@ -291,7 +350,11 @@ export default function MenuView() {
             />
             {activeCategory && (
               <SubCategoryNav
-                subCategories={[...SUB_CATEGORIES]}
+                subCategories={
+                  (activeCategoryData?.subCategories as string[] | undefined)?.length
+                    ? (activeCategoryData!.subCategories as string[])
+                    : (categorySubCategoriesMap[activeCategoryData?.name || ''] || [])
+                }
                 activeSubCategory={activeSubCategory}
                 onSelect={setActiveSubCategory}
               />
