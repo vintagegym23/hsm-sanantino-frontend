@@ -18,7 +18,8 @@ import {
   Zap
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { cn } from '../lib/utils';
+import { categorySubCategoriesMap } from '../lib/categorySubCategories';
+import { cn, normalizeSubCategories } from '../lib/utils';
 
 export default function AdminDashboard() {
   const { token, logout } = useAuth();
@@ -40,6 +41,7 @@ export default function AdminDashboard() {
     description: '',
     price: '',
     categoryId: '',
+    subCategory: '',
   });
   const [categoryFormData, setCategoryFormData] = useState({
     name: '',
@@ -56,9 +58,40 @@ export default function AdminDashboard() {
   const [newTickerItem, setNewTickerItem] = useState('');
   const [editingTickerIndex, setEditingTickerIndex] = useState<number | null>(null);
   const [editingTickerValue, setEditingTickerValue] = useState('');
-  const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp'] as const;
+  const [newSubCategoryInput, setNewSubCategoryInput] = useState('');
 
   const api = authApi(token ?? '');
+
+
+  const handleAddSubCategory = () => {
+    const nextSubCategory = newSubCategoryInput.trim();
+    if (!nextSubCategory) return;
+
+    setCategoryFormData((prev) => {
+      const alreadyExists = prev.subCategories.some(
+        (s) => s.toLowerCase() === nextSubCategory.toLowerCase()
+      );
+      if (alreadyExists) return prev;
+      return { ...prev, subCategories: [...prev.subCategories, nextSubCategory] };
+    });
+    setNewSubCategoryInput('');
+  };
+
+  const handleRemoveSubCategory = (indexToRemove: number) => {
+    setCategoryFormData((prev) => ({
+      ...prev,
+      subCategories: prev.subCategories.filter((_, index) => index !== indexToRemove),
+    }));
+  };
+
+  const handleToggleSubCategory = (subCat: string) => {
+    setCategoryFormData((prev) => ({
+      ...prev,
+      subCategories: prev.subCategories.includes(subCat)
+        ? prev.subCategories.filter(s => s !== subCat)
+        : [...prev.subCategories, subCat],
+    }));
+  };
 
   const fetchData = async () => {
     try {
@@ -69,7 +102,16 @@ export default function AdminDashboard() {
         api.get('/api/media'),
       ]);
       setStats(statsRes.data);
-      setCategories(catRes.data);
+      
+      // Parse subCategories if they come as JSON strings
+      const categoriesWithParsedSubCats = catRes.data.map((cat: Category) => {
+        return {
+          ...cat,
+          subCategories: normalizeSubCategories(cat.subCategories),
+        };
+      });
+      
+      setCategories(categoriesWithParsedSubCats);
       setItems(itemRes.data);
       setMedia(mediaRes.data);
     } catch (err) {
@@ -84,10 +126,14 @@ export default function AdminDashboard() {
   const handleOpenCategoryModal = (category: Category | null = null) => {
     if (category) {
       setEditingCategory(category);
+      const dbSubCats = normalizeSubCategories(category.subCategories);
+      const defaultSubCats = dbSubCats.length > 0
+        ? dbSubCats
+        : (categorySubCategoriesMap[category.name] ?? []);
       setCategoryFormData({
         name: category.name,
         imageUrl: category.imageUrl || '',
-        subCategories: [],
+        subCategories: defaultSubCats,
       });
     } else {
       setEditingCategory(null);
@@ -97,6 +143,7 @@ export default function AdminDashboard() {
         subCategories: [],
       });
     }
+    setNewSubCategoryInput('');
     setIsCategoryModalOpen(true);
   };
 
@@ -104,6 +151,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     const data = new FormData();
     data.append('name', categoryFormData.name);
+    data.append('subCategories', JSON.stringify(categoryFormData.subCategories));
     if (categoryImageFile) {
       data.append('image', categoryImageFile);
     } else {
@@ -112,13 +160,24 @@ export default function AdminDashboard() {
 
     try {
       if (editingCategory) {
-        await api.put(`/api/categories/${editingCategory.id}`, data);
+        const res = await api.put(`/api/categories/${editingCategory.id}`, data);
+        const updated = res.data;
+        // Immediately reflect the saved sub-categories in state so the UI
+        // is consistent before fetchData() completes.
+        setCategories((prev) =>
+          prev.map((c) =>
+            c.id === updated.id
+              ? { ...updated, subCategories: normalizeSubCategories(updated.subCategories) }
+              : c
+          )
+        );
       } else {
         await api.post('/api/categories', data);
       }
       setIsCategoryModalOpen(false);
+      setNewSubCategoryInput('');
       setCategoryImageFile(null);
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       alert('Error saving category');
     }
@@ -132,6 +191,7 @@ export default function AdminDashboard() {
         description: item.description,
         price: item.price.toString(),
         categoryId: item.categoryId,
+        subCategory: item.subCategory || '',
       });
     } else {
       setEditingItem(null);
@@ -140,6 +200,7 @@ export default function AdminDashboard() {
         description: '',
         price: '',
         categoryId: categories[0]?.id || '',
+        subCategory: '',
       });
     }
     setIsItemModalOpen(true);
@@ -152,6 +213,7 @@ export default function AdminDashboard() {
       description: formData.description,
       price: formData.price,
       categoryId: formData.categoryId,
+      subCategory: formData.subCategory || null,
     };
 
     try {
@@ -788,16 +850,19 @@ export default function AdminDashboard() {
         {/* Category Modal */}
         {isCategoryModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-stone-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+            <div className="bg-white dark:bg-stone-900 w-full max-w-md max-h-[calc(100vh-2rem)] rounded-3xl shadow-2xl overflow-hidden flex flex-col">
               <div className="p-6 border-b border-stone-200 dark:border-stone-800 flex justify-between items-center">
                 <h3 className="text-2xl font-bold text-stone-900 dark:text-white">
                   {editingCategory ? 'Edit Category' : 'Add Category'}
                 </h3>
-                <button onClick={() => setIsCategoryModalOpen(false)} className="text-stone-400 hover:text-stone-600">
+                <button onClick={() => {
+                  setIsCategoryModalOpen(false);
+                  setNewSubCategoryInput('');
+                }} className="text-stone-400 hover:text-stone-600">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleCategorySubmit} className="p-6 space-y-6">
+              <form onSubmit={handleCategorySubmit} className="p-6 space-y-6 overflow-y-auto">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Category Name</label>
                   <input
@@ -809,31 +874,63 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-3">Sub-Categories</label>
-                  <div className="space-y-3">
-                    {SUB_CATEGORIES.map((subCat) => (
-                      <label key={subCat} className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={categoryFormData.subCategories.includes(subCat)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setCategoryFormData({
-                                ...categoryFormData,
-                                subCategories: [...categoryFormData.subCategories, subCat],
-                              });
-                            } else {
-                              setCategoryFormData({
-                                ...categoryFormData,
-                                subCategories: categoryFormData.subCategories.filter(s => s !== subCat),
-                              });
-                            }
-                          }}
-                          className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
-                        />
-                        <span className="text-sm font-bold text-stone-700 dark:text-stone-300">{subCat}</span>
-                      </label>
-                    ))}
+                  
+                  {/* Input to add new sub-categories */}
+                  <div className="mb-4">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newSubCategoryInput}
+                        onChange={(e) => setNewSubCategoryInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddSubCategory();
+                          }
+                        }}
+                        placeholder="Enter new sub-category and press Enter"
+                        className="min-w-0 flex-1 px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddSubCategory}
+                        className="px-4 py-3 rounded-xl bg-primary text-white font-bold uppercase tracking-widest text-xs hover:opacity-90 transition-all"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <p className="text-xs text-stone-400 dark:text-stone-500 mt-2">Type a sub-category name and press Enter or click Add</p>
                   </div>
+
+                  {/* Unified checkbox list: map sub-categories + any custom ones added via input */}
+                  {(() => {
+                    const mapSubCats = categorySubCategoriesMap[categoryFormData.name] ?? [];
+                    const allAvailable = [...new Set([...mapSubCats, ...categoryFormData.subCategories])];
+                    if (allAvailable.length === 0) return null;
+                    return (
+                      <div className="space-y-3 bg-stone-50 dark:bg-stone-800/50 p-4 rounded-xl border border-stone-200 dark:border-stone-700">
+                        <p className="text-xs font-bold text-stone-600 dark:text-stone-400 uppercase tracking-widest">
+                          Sub-Categories
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                          {allAvailable.map((subCat) => (
+                            <label
+                              key={subCat}
+                              className="inline-flex items-center gap-2 cursor-pointer select-none"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={categoryFormData.subCategories.includes(subCat)}
+                                onChange={() => handleToggleSubCategory(subCat)}
+                                className="w-4 h-4 accent-primary rounded"
+                              />
+                              <span className="text-sm font-medium text-stone-700 dark:text-stone-300">{subCat}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Background Image</label>
@@ -847,7 +944,10 @@ export default function AdminDashboard() {
                 <div className="flex gap-4 pt-4">
                   <button
                     type="button"
-                    onClick={() => setIsCategoryModalOpen(false)}
+                    onClick={() => {
+                      setIsCategoryModalOpen(false);
+                      setNewSubCategoryInput('');
+                    }}
                     className="flex-1 px-6 py-4 rounded-xl font-bold uppercase tracking-widest border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800 transition-all"
                   >
                     Cancel
@@ -903,12 +1003,46 @@ export default function AdminDashboard() {
                   <select
                     required
                     value={formData.categoryId}
-                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, categoryId: e.target.value, subCategory: '' });
+                    }}
                     className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
                   >
                     {categories.map((cat) => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
+                  </select>
+                </div>
+
+                {/* Sub-Category Dropdown */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Sub-Category</label>
+                  <select
+                    value={formData.subCategory}
+                    onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                    disabled={!formData.categoryId}
+                    className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {(() => {
+                      const selectedCat = categories.find(c => c.id === formData.categoryId);
+                      const dbSubCats = selectedCat?.subCategories ?? [];
+                      const subCats = dbSubCats.length > 0
+                        ? dbSubCats
+                        : (selectedCat ? (categorySubCategoriesMap[selectedCat.name] ?? []) : []);
+                      return subCats.length > 0
+                        ? <option value="">Select a sub-category (optional)</option>
+                        : <option value="">No sub-categories available</option>;
+                    })()}
+                    {(() => {
+                      const selectedCat = categories.find(c => c.id === formData.categoryId);
+                      const dbSubCats = selectedCat?.subCategories ?? [];
+                      const subCats = dbSubCats.length > 0
+                        ? dbSubCats
+                        : (selectedCat ? (categorySubCategoriesMap[selectedCat.name] ?? []) : []);
+                      return subCats.map((subCat) => (
+                        <option key={subCat} value={subCat}>{subCat}</option>
+                      ));
+                    })()}
                   </select>
                 </div>
                 <div>

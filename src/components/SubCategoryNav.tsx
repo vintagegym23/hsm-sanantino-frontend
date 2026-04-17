@@ -34,21 +34,6 @@ export function SubCategoryNav({ subCategories, activeSubCategory, onSelect }: S
         ref={scrollContainerRef}
         className="max-w-7xl mx-auto px-4 flex items-center flex-nowrap gap-2 py-3 overflow-x-auto no-scrollbar scroll-smooth"
       >
-        <button
-          type="button"
-          data-active={activeSubCategory === null}
-          aria-pressed={activeSubCategory === null}
-          onClick={() => onSelect(null)}
-          className={cn(
-            'shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap uppercase tracking-wide transition-all',
-            activeSubCategory === null
-              ? 'bg-primary text-white shadow-lg shadow-primary/20'
-              : 'bg-stone-100 dark:bg-stone-900 text-stone-600 dark:text-stone-400 hover:bg-stone-200 dark:hover:bg-stone-800'
-          )}
-        >
-          All
-        </button>
-
         {subCategories.map((subCategory) => {
           const isActive = activeSubCategory === subCategory;
           return (
