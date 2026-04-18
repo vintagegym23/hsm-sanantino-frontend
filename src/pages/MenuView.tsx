@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../lib/api';
-import { motion } from 'motion/react';
-import { Category, Item, Media } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+import { Category, Item, Media, Ticker, Special } from '../types';
 import { ItemCard } from '../components/ItemCard';
 import { CategoryNav } from '../components/CategoryNav';
 import { SubCategoryNav } from '../components/SubCategoryNav';
@@ -10,40 +10,12 @@ import { cn } from '../lib/utils';
 import { Moon, Sun, ChevronDown } from 'lucide-react';
 import logo from "../images/logo-white.png";
 
-const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp'] as const;
-
-const heroTickerText = [
-  'Freshly Crafted',
-  'Claypot Signature Blends',
-  'Authentic Hyderabadi Flavors',
-  'Open Daily For Dine-In & Takeaway',
-];
-
-const specialHighlights = [
-  {
-    name: 'Matka Mirchi Feast',
-    detail: 'Slow-fired claypot rice with roasted chilies, mint, and a smoky finish.',
-    price: '$18',
-  },
-  {
-    name: 'Weekend Haleem Bowl',
-    detail: 'Silky lentils, tender spice, crisp onions, and a bright squeeze of lime.',
-    price: '$14',
-  },
-  {
-    name: 'Charcoal Chai Float',
-    detail: 'Cold chai, vanilla cream, and a cardamom dusting for the final spoonful.',
-    price: '$7',
-  },
-];
-
-const defaultSpecialSectionImage =
-  'https://images.unsplash.com/photo-1563379926898-05f4575a45d8?auto=format&fit=crop&w=1200&q=80';
-
 export default function MenuView() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [media, setMedia] = useState<Media[]>([]);
+  const [ticker, setTicker] = useState<Ticker[]>([]);
+  const [specials, setSpecials] = useState<Special[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSubCategory, setActiveSubCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,14 +24,18 @@ export default function MenuView() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [catRes, itemRes, mediaRes] = await Promise.all([
+        const [catRes, itemRes, mediaRes, tickerRes, specialsRes] = await Promise.all([
           api.get('/api/categories'),
           api.get('/api/items'),
           api.get('/api/media'),
+          api.get('/api/ticker'),
+          api.get('/api/specials'),
         ]);
         setCategories(catRes.data);
         setItems(itemRes.data);
         setMedia(mediaRes.data);
+        setTicker(tickerRes.data);
+        setSpecials(specialsRes.data);
       } catch (error) {
         console.error('Error fetching menu data:', error);
       } finally {
@@ -69,44 +45,28 @@ export default function MenuView() {
     fetchData();
   }, []);
 
+  // Subcategory match uses the item's DB field — backend is the source of truth
   const itemMatchesSubCategory = (item: Item, subCategory: string | null) => {
-    if (!subCategory) {
-      return true;
-    }
-
-    const itemName = item.name.toLowerCase();
-
-    if (subCategory === 'Veg') {
-      const nonVegPattern = /(chicken|goat|lamb|mutton|fish|shrimp|prawn|jhinga|egg|gosht|nalli|natukodi)/;
-      return !nonVegPattern.test(itemName);
-    }
-
-    const subCategoryMatchers: Record<string, RegExp> = {
-      paneer: /paneer/,
-      egg: /egg/,
-      chicken: /chicken/,
-      goat: /(goat|lamb|mutton|gosht|nalli)/,
-      fish: /(fish|pomfret)/,
-      shrimp: /(shrimp|prawn|jhinga)/,
-    };
-
-    const matcher = subCategoryMatchers[subCategory.toLowerCase()];
-    return matcher ? matcher.test(itemName) : true;
+    if (!subCategory) return true;
+    return item.subCategory === subCategory;
   };
 
-  const filteredItems = items.filter((item) => {
+  const filteredItems = useMemo(() => items.filter((item) => {
     const categoryMatch = activeCategory ? item.categoryId === activeCategory : true;
-    if (!categoryMatch) {
-      return false;
-    }
+    if (!categoryMatch) return false;
     return itemMatchesSubCategory(item, activeSubCategory);
-  });
+  }), [items, activeCategory, activeSubCategory]);
 
-  const activeCategoryData = categories.find(c => c.id === activeCategory);
-  const heroMedia = media.find((m) => m.type === 'hero_video') || media.find((m) => m.type === 'hero_image');
-  const specialSection = media.find((m) => m.type === 'special_section');
-  const specialSectionImage = specialSection?.url || defaultSpecialSectionImage;
-  const menuBg = activeCategoryData?.imageUrl || media.find((m) => m.type === 'menu_bg')?.url;
+  const activeCategoryData = useMemo(() => categories.find(c => c.id === activeCategory), [categories, activeCategory]);
+  const activeSubCategories = useMemo(() => activeCategoryData?.subCategories ?? [], [activeCategoryData]);
+
+  const heroMedia = useMemo(() => 
+    media.find((m) => ['hero_image', 'hero_video'].includes(m.type) && m.isActive) || 
+    media.find((m) => ['hero_image', 'hero_video'].includes(m.type)), 
+  [media]);
+  
+  const specialSectionMedia = useMemo(() => media.find((m) => m.type === 'special_section'), [media]);
+  const menuBg = useMemo(() => activeCategoryData?.imageUrl || media.find((m) => m.type === 'menu_bg')?.url, [activeCategoryData, media]);
 
   const scrollToMenu = () => {
     document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' });
@@ -114,8 +74,30 @@ export default function MenuView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-50 dark:bg-stone-950">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      <div className="min-h-screen bg-stone-50 dark:bg-stone-950 animate-pulse">
+        {/* Skeleton Hero */}
+        <div className="h-screen bg-stone-200 dark:bg-stone-900 w-full flex flex-col items-center justify-center">
+          <div className="w-64 h-64 bg-stone-300 dark:bg-stone-800 rounded-full mb-8" />
+          <div className="w-3/4 max-w-lg h-8 bg-stone-300 dark:bg-stone-800 rounded-full mb-8" />
+          <div className="w-40 h-12 bg-stone-300 dark:bg-stone-800 rounded-full" />
+        </div>
+        
+        {/* Skeleton Navigation */}
+        <div className="max-w-7xl mx-auto px-4 py-4 flex gap-4 overflow-hidden">
+          <div className="h-10 w-24 bg-stone-200 dark:bg-stone-800 rounded-full shrink-0" />
+          <div className="h-10 w-32 bg-stone-200 dark:bg-stone-800 rounded-full shrink-0" />
+          <div className="h-10 w-28 bg-stone-200 dark:bg-stone-800 rounded-full shrink-0" />
+          <div className="h-10 w-36 bg-stone-200 dark:bg-stone-800 rounded-full shrink-0" />
+        </div>
+
+        {/* Skeleton Grid */}
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-80 bg-stone-200 dark:bg-stone-900 rounded-3xl" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -132,53 +114,52 @@ export default function MenuView() {
             className="absolute inset-0 w-full h-full object-cover"
             src={heroMedia.url}
           />
-        ) : (
+        ) : heroMedia?.url ? (
           <img
-            src={heroMedia?.url}
+            src={heroMedia.url}
             alt="Hero"
             className="absolute inset-0 w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-stone-900 to-stone-950" />
         )}
         <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
 
-        <div className="hero-ticker-shell absolute top-0 left-0 right-0 z-30 h-12 overflow-hidden border-b border-white/20 bg-black/45 backdrop-blur-md">
-          <div className="hero-ticker-track">
-            {[0, 1, 2, 3].map((groupIndex) => (
-              <div key={groupIndex} className="hero-ticker-group" aria-hidden={groupIndex > 0}>
-                {heroTickerText.map((text) => (
-                  <span
-                    key={`${text}-${groupIndex}`}
-                    className="hero-ticker-item text-[11px] md:text-xs font-bold uppercase tracking-[0.24em] text-stone-200"
-                  >
-                    {text}
-                  </span>
-                ))}
-              </div>
-            ))}
+        {/* Scrolling Ticker — only rendered when backend has data */}
+        {ticker.length > 0 && (
+          <div className="hero-ticker-shell absolute top-0 left-0 right-0 z-30 h-12 overflow-hidden border-b border-white/20 bg-black/45 backdrop-blur-md">
+            <div className="hero-ticker-track">
+              {[0, 1, 2, 3].map((groupIndex) => (
+                <div key={groupIndex} className="hero-ticker-group" aria-hidden={groupIndex > 0}>
+                  {ticker.map((t) => (
+                    <span
+                      key={`${t.id}-${groupIndex}`}
+                      className="hero-ticker-item text-[11px] md:text-xs font-bold uppercase tracking-[0.24em] text-stone-200"
+                    >
+                      {t.text}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-        
+        )}
+
         <div className="relative z-10 text-center px-4">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
           >
-            {/* 1. ADD YOUR LOGO HERE */}
-    <img 
-      src={logo} 
-      alt="Spicy Matka Logo" 
-      className="mx-auto mb-6 h-64 md:h-96 w-auto object-contain" 
-    />
-            {/* 2. UPDATED TEXT TO HYDERABADI SPICY MATKA */}
-    {/* <h1 className="text-4xl md:text-6xl font-black text-white mb-4 font-headline italic tracking-tight">
-      Hyderabadi Spicy Matka
-    </h1> */}
-
-    <p className="text-xl md:text-2xl text-stone-300 mb-8 max-w-2xl mx-auto font-body">
-      Crafted Heritage • Elevated Spice • Authentic Claypot Experience
-    </p>
+            <img
+              src={logo}
+              alt="Spicy Matka Logo"
+              className="mx-auto mb-6 h-64 md:h-96 w-auto object-contain"
+            />
+            <p className="text-xl md:text-2xl text-stone-300 mb-8 max-w-2xl mx-auto font-body">
+              Crafted Heritage • Elevated Spice • Authentic Claypot Experience
+            </p>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -204,75 +185,56 @@ export default function MenuView() {
         </button>
       </section>
 
-      <section className="relative overflow-hidden bg-white dark:bg-stone-950 border-b border-stone-200 dark:border-stone-800">
-        <div className="absolute inset-y-0 left-0 w-full md:w-1/2 opacity-15 md:opacity-100">
-          <img
-            src={specialSectionImage}
-            alt="Specials"
-            className="h-full w-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/35 via-transparent to-white dark:to-stone-950" />
-        </div>
+      {/* Specials Posters Section */}
+      {specials.length > 0 && (
+        <section className="relative overflow-hidden bg-stone-50 dark:bg-stone-950 border-b border-stone-200 dark:border-stone-800 py-12 md:py-20">
+          <div className="max-w-7xl mx-auto px-4 text-center mb-10">
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary mb-4">
+              Don&apos;t Miss Out
+            </p>
+            <h2 className="text-4xl md:text-5xl font-black text-stone-900 dark:text-white font-headline italic">
+              Today&apos;s Specials
+            </h2>
+          </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-4 py-16 md:py-24">
-          <div className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-10 lg:gap-16 items-center">
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.35 }}
-              transition={{ duration: 0.6 }}
-              className="lg:pl-8"
-            >
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary mb-4">
-                Today&apos;s Specials
-              </p>
-              <h2 className="text-4xl md:text-5xl font-black text-stone-950 dark:text-white font-headline italic mb-5">
-                Fresh claypot favorites, poured hot.
-              </h2>
-              <p className="text-stone-600 dark:text-stone-300 text-lg leading-8 max-w-xl">
-                Small-batch dishes picked for the day, built around bold spice, slow heat, and a little tableside drama.
-              </p>
-            </motion.div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {specialHighlights.map((special, index) => (
-                <motion.article
-                  key={special.name}
-                  initial={{ opacity: 0, y: 20 }}
+          <div className="max-w-7xl mx-auto px-4">
+            <div className={cn(
+              "grid gap-6 md:gap-10",
+              specials.length === 1 ? "grid-cols-1 max-w-lg mx-auto" :
+              specials.length === 2 ? "grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto" :
+              "grid-cols-1 md:grid-cols-3"
+            )}>
+              {specials.map((special, index) => (
+                <motion.div
+                  key={special.id}
+                  initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.35 }}
-                  transition={{ duration: 0.5, delay: index * 0.08 }}
-                  className="rounded-lg border border-stone-200 dark:border-stone-800 bg-stone-50/95 dark:bg-stone-900/95 p-5 shadow-sm"
+                  viewport={{ once: true, amount: 0.2 }}
+                  transition={{ duration: 0.5, delay: index * 0.1 }}
+                  className="rounded-2xl overflow-hidden shadow-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 aspect-[1/1.414]"
                 >
-                  <div className="flex items-start justify-between gap-4 mb-5">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300">
-                      Limited
-                    </span>
-                    <span className="text-primary font-black">{special.price}</span>
-                  </div>
-                  <h3 className="text-xl font-black text-stone-950 dark:text-white font-headline italic mb-3">
-                    {special.name}
-                  </h3>
-                  <p className="text-sm leading-6 text-stone-600 dark:text-stone-400">
-                    {special.detail}
-                  </p>
-                </motion.article>
+                  <img
+                    src={special.imageUrl}
+                    alt={`Special Poster ${index + 1}`}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </motion.div>
               ))}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Menu Section */}
-      <div 
+      <div
         id="menu-section"
         className="relative min-h-screen transition-all duration-700"
-        style={{ 
+        style={{
           backgroundImage: activeCategory && menuBg ? `url(${menuBg})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundAttachment: 'fixed'
+          backgroundAttachment: 'fixed',
         }}
       >
         <div className={cn(
@@ -289,9 +251,9 @@ export default function MenuView() {
                 setActiveSubCategory(null);
               }}
             />
-            {activeCategory && (
+            {activeCategory && activeSubCategories.length > 0 && (
               <SubCategoryNav
-                subCategories={[...SUB_CATEGORIES]}
+                subCategories={activeSubCategories}
                 activeSubCategory={activeSubCategory}
                 onSelect={setActiveSubCategory}
               />
@@ -344,7 +306,7 @@ export default function MenuView() {
                   <h2 className="text-4xl font-black text-stone-900 dark:text-white font-headline italic">
                     {activeCategoryData?.name}
                   </h2>
-                  <button 
+                  <button
                     onClick={() => {
                       setActiveCategory(null);
                       setActiveSubCategory(null);
@@ -354,24 +316,26 @@ export default function MenuView() {
                     Back to Categories
                   </button>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {filteredItems.map((item) => (
-                    <ItemCard key={item.id} item={item} />
-                  ))}
-                </div>
+                {filteredItems.length > 0 ? (
+                  <motion.div layout className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <AnimatePresence mode="popLayout">
+                      {filteredItems.map((item) => (
+                        <ItemCard key={item.id} item={item} />
+                      ))}
+                    </AnimatePresence>
+                  </motion.div>
+                ) : (
+                  <div className="text-center py-20">
+                    <p className="text-stone-500 dark:text-stone-400 text-xl">
+                      No items found{activeSubCategory ? ` for "${activeSubCategory}"` : ''} in this category.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
-
-            {activeCategory && filteredItems.length === 0 && (
-              <div className="text-center py-20">
-                <p className="text-stone-500 dark:text-stone-400 text-xl">
-                  No items found in this category.
-                </p>
-              </div>
-            )}
-        </main>
+          </main>
+        </div>
       </div>
-    </div>
 
       <footer className="bg-stone-100 dark:bg-stone-900 py-12 border-t border-stone-200 dark:border-stone-800">
         <div className="max-w-7xl mx-auto px-4 text-center">

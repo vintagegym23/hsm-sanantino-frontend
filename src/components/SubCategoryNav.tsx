@@ -17,11 +17,9 @@ export function SubCategoryNav({ subCategories, activeSubCategory, onSelect }: S
 
     const activeElement = scrollContainerRef.current.querySelector('[data-active="true"]');
     if (activeElement instanceof HTMLElement) {
-      activeElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center',
-      });
+      const container = scrollContainerRef.current;
+      const scrollLeft = activeElement.offsetLeft - container.offsetWidth / 2 + activeElement.offsetWidth / 2;
+      container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
       return;
     }
 

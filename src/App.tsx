@@ -6,6 +6,8 @@ import MenuView from './pages/MenuView';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 
+import { Toaster } from 'react-hot-toast';
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <>{children}</> : <Navigate to="/admin/login" />;
@@ -16,6 +18,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <Router>
+          <Toaster position="top-right" />
           <Routes>
             {/* Public Menu */}
             <Route path="/" element={<MenuView />} />

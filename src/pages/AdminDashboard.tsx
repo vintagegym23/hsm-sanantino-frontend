@@ -1,21 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { authApi } from '../lib/api';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { Stats, Category, Item, Media } from '../types';
-import { 
-  LayoutDashboard, 
-  Utensils, 
-  Layers, 
-  Image as ImageIcon, 
-  LogOut, 
-  Plus, 
-  Trash2, 
+import { Stats, Category, Item, Media, Ticker, Special } from '../types';
+import {
+  LayoutDashboard,
+  Utensils,
+  Layers,
+  Image as ImageIcon,
+  LogOut,
+  Plus,
+  Trash2,
   Edit2,
   Moon,
   Sun,
   Menu,
   X,
-  Zap
+  Zap,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
@@ -29,10 +30,13 @@ export default function AdminDashboard() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [media, setMedia] = useState<Media[]>([]);
+  const [tickerItems, setTickerItems] = useState<Ticker[]>([]);
+  const [specials, setSpecials] = useState<Special[]>([]);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [isSubmittingCategory, setIsSubmittingCategory] = useState(false);
+  const [isSubmittingItem, setIsSubmittingItem] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({
@@ -40,6 +44,7 @@ export default function AdminDashboard() {
     description: '',
     price: '',
     categoryId: '',
+    subCategory: '',
   });
   const [categoryFormData, setCategoryFormData] = useState({
     name: '',
@@ -47,38 +52,45 @@ export default function AdminDashboard() {
     subCategories: [] as string[],
   });
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
-  const [tickerItems, setTickerItems] = useState<string[]>([
-    'Freshly Crafted',
-    'Claypot Signature Blends',
-    'Authentic Hyderabadi Flavors',
-    'Open Daily For Dine-In & Takeaway',
-  ]);
-  const [newTickerItem, setNewTickerItem] = useState('');
-  const [editingTickerIndex, setEditingTickerIndex] = useState<number | null>(null);
+  const [newTickerText, setNewTickerText] = useState('');
+  const [editingTickerId, setEditingTickerId] = useState<string | null>(null);
   const [editingTickerValue, setEditingTickerValue] = useState('');
-  const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp'] as const;
+
+  const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp', 'mushroom'] as const;
 
   const api = authApi(token ?? '');
 
   const fetchData = async () => {
     try {
-      const [statsRes, catRes, itemRes, mediaRes] = await Promise.all([
+      const [statsRes, catRes, itemRes, mediaRes, specialsRes] = await Promise.all([
         api.get('/api/stats'),
         api.get('/api/categories'),
         api.get('/api/items'),
         api.get('/api/media'),
+        api.get('/api/specials'),
       ]);
       setStats(statsRes.data);
       setCategories(catRes.data);
       setItems(itemRes.data);
       setMedia(mediaRes.data);
+      setSpecials(specialsRes.data);
     } catch (err) {
       console.error('Error fetching data:', err);
     }
   };
 
+  const fetchTicker = async () => {
+    try {
+      const res = await api.get('/api/ticker');
+      setTickerItems(res.data);
+    } catch (err) {
+      console.error('Error fetching ticker:', err);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchTicker();
   }, [token]);
 
   const handleOpenCategoryModal = (category: Category | null = null) => {
@@ -87,15 +99,11 @@ export default function AdminDashboard() {
       setCategoryFormData({
         name: category.name,
         imageUrl: category.imageUrl || '',
-        subCategories: [],
+        subCategories: category.subCategories ?? [],
       });
     } else {
       setEditingCategory(null);
-      setCategoryFormData({
-        name: '',
-        imageUrl: '',
-        subCategories: [],
-      });
+      setCategoryFormData({ name: '', imageUrl: '', subCategories: [] });
     }
     setIsCategoryModalOpen(true);
   };
@@ -104,12 +112,14 @@ export default function AdminDashboard() {
     e.preventDefault();
     const data = new FormData();
     data.append('name', categoryFormData.name);
+    data.append('subCategories', JSON.stringify(categoryFormData.subCategories));
     if (categoryImageFile) {
       data.append('image', categoryImageFile);
     } else {
       data.append('imageUrl', categoryFormData.imageUrl);
     }
 
+    setIsSubmittingCategory(true);
     try {
       if (editingCategory) {
         await api.put(`/api/categories/${editingCategory.id}`, data);
@@ -119,8 +129,11 @@ export default function AdminDashboard() {
       setIsCategoryModalOpen(false);
       setCategoryImageFile(null);
       fetchData();
+      toast.success(`Category ${editingCategory ? 'updated' : 'created'} successfully`);
     } catch (err: any) {
-      alert('Error saving category');
+      toast.error(err.response?.data?.message || 'Error saving category');
+    } finally {
+      setIsSubmittingCategory(false);
     }
   };
 
@@ -129,18 +142,14 @@ export default function AdminDashboard() {
       setEditingItem(item);
       setFormData({
         name: item.name,
-        description: item.description,
+        description: item.description ?? '',
         price: item.price.toString(),
         categoryId: item.categoryId,
+        subCategory: item.subCategory ?? '',
       });
     } else {
       setEditingItem(null);
-      setFormData({
-        name: '',
-        description: '',
-        price: '',
-        categoryId: categories[0]?.id || '',
-      });
+      setFormData({ name: '', description: '', price: '', categoryId: categories[0]?.id || '', subCategory: '' });
     }
     setIsItemModalOpen(true);
   };
@@ -152,8 +161,10 @@ export default function AdminDashboard() {
       description: formData.description,
       price: formData.price,
       categoryId: formData.categoryId,
+      subCategory: formData.subCategory || null,
     };
 
+    setIsSubmittingItem(true);
     try {
       if (editingItem) {
         await api.put(`/api/items/${editingItem.id}`, data);
@@ -162,8 +173,11 @@ export default function AdminDashboard() {
       }
       setIsItemModalOpen(false);
       fetchData();
+      toast.success(`Item ${editingItem ? 'updated' : 'created'} successfully`);
     } catch (err: any) {
-      alert('Error saving item');
+      toast.error(err.response?.data?.message || 'Error saving item');
+    } finally {
+      setIsSubmittingItem(false);
     }
   };
 
@@ -176,41 +190,21 @@ export default function AdminDashboard() {
       const data = new FormData();
       data.append('type', type);
       data.append('file', file);
-      try {
-        // If it's a hero type, we might want to delete existing ones first to "remove duplicates"
-        // but for now let's just add it and the UI will show the latest/first.
-        // Actually, let's just update the existing one if it exists.
+      const uploadPromise = async () => {
         const existing = media.find(m => m.type === type);
         if (existing) {
           await api.put(`/api/media/${existing.id}`, data);
         } else {
           await api.post('/api/media', data);
         }
-        fetchData();
-      } catch (err) {
-        alert('Error adding media');
-      }
-    };
-    fileInput.click();
-  };
-
-  const handleCategoryBackgroundChange = async (categoryId: string) => {
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.onchange = async (e: any) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const data = new FormData();
-      const cat = categories.find(c => c.id === categoryId);
-      if (!cat) return;
-      data.append('name', cat.name);
-      data.append('image', file);
-      try {
-        await api.put(`/api/categories/${categoryId}`, data);
-        fetchData();
-      } catch (err) {
-        alert('Error updating category background');
-      }
+        await fetchData();
+      };
+      
+      toast.promise(uploadPromise(), {
+        loading: 'Uploading media...',
+        success: 'Media uploaded successfully',
+        error: 'Failed to upload media',
+      });
     };
     fileInput.click();
   };
@@ -224,43 +218,157 @@ export default function AdminDashboard() {
       const data = new FormData();
       data.append('type', type);
       data.append('file', file);
-      try {
+      const uploadPromise = async () => {
         await api.put(`/api/media/${id}`, data);
-        fetchData();
-      } catch (err) {
-        alert('Error updating media');
-      }
+        await fetchData();
+      };
+      
+      toast.promise(uploadPromise(), {
+        loading: 'Updating media...',
+        success: 'Media updated successfully',
+        error: 'Failed to update media',
+      });
     };
     fileInput.click();
   };
 
   const handleDeleteMedia = async (id: string) => {
     if (!confirm('Are you sure you want to delete this media item?')) return;
+    setDeletingId(id);
     try {
       await api.delete(`/api/media/${id}`);
-      fetchData();
+      setMedia(prev => prev.filter(m => m.id !== id));
+      toast.success('Media deleted');
     } catch (err) {
-      alert('Error deleting media');
+      toast.error('Error deleting media');
+      fetchData();
+    } finally {
+      setDeletingId(null);
     }
+  };
+
+  const handleActivateMedia = async (id: string) => {
+    const activationPromise = async () => {
+      await api.patch(`/api/media/${id}/activate`);
+      await fetchData();
+    };
+    toast.promise(activationPromise(), {
+      loading: 'Activating...',
+      success: 'Media activated',
+      error: 'Failed to activate media',
+    });
   };
 
   const handleDeleteCategory = async (id: string) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
+    setDeletingId(id);
     try {
       await api.delete(`/api/categories/${id}`);
-      fetchData();
+      setCategories(prev => prev.filter(c => c.id !== id));
+      toast.success('Category deleted');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Error deleting category');
+      toast.error(err.response?.data?.message || 'Error deleting category');
+      fetchData();
+    } finally {
+      setDeletingId(null);
     }
   };
 
   const handleDeleteItem = async (id: string) => {
     if (!confirm('Are you sure you want to delete this item?')) return;
+    setDeletingId(id);
     try {
       await api.delete(`/api/items/${id}`);
-      fetchData();
+      setItems(prev => prev.filter(i => i.id !== id));
+      toast.success('Item deleted');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Error deleting item');
+      toast.error(err.response?.data?.message || 'Error deleting item');
+      fetchData();
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleAddTicker = async () => {
+    const text = newTickerText.trim();
+    if (!text) return;
+    try {
+      const res = await api.post('/api/ticker', { text });
+      setTickerItems(prev => [...prev, res.data]);
+      setNewTickerText('');
+      toast.success('Ticker phrase added');
+    } catch (err) {
+      toast.error('Error adding ticker phrase');
+    }
+  };
+
+  const handleSaveTicker = async (id: string) => {
+    const text = editingTickerValue.trim();
+    if (!text) return;
+    try {
+      const res = await api.put(`/api/ticker/${id}`, { text });
+      setTickerItems(prev => prev.map(t => t.id === id ? res.data : t));
+      setEditingTickerId(null);
+      toast.success('Ticker phrase updated');
+    } catch (err) {
+      toast.error('Error updating ticker phrase');
+    }
+  };
+
+  const handleDeleteTicker = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await api.delete(`/api/ticker/${id}`);
+      setTickerItems(prev => prev.filter(t => t.id !== id));
+      toast.success('Ticker phrase deleted');
+    } catch (err) {
+      toast.error('Error deleting ticker phrase');
+      fetchTicker();
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleAddSpecial = async () => {
+    if (specials.length >= 3) {
+      toast.error('Maximum of 3 specials allowed.');
+      return;
+    }
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const data = new FormData();
+      data.append('image', file);
+      
+      const uploadPromise = async () => {
+        await api.post('/api/specials', data);
+        await fetchData();
+      };
+      
+      toast.promise(uploadPromise(), {
+        loading: 'Uploading poster...',
+        success: 'Special poster added',
+        error: (err) => err.response?.data?.message || 'Error adding special poster',
+      });
+    };
+    fileInput.click();
+  };
+
+  const handleDeleteSpecial = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this special poster?')) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/api/specials/${id}`);
+      setSpecials(prev => prev.filter(s => s.id !== id));
+      toast.success('Special poster deleted');
+    } catch (err) {
+      toast.error('Error deleting special');
+      fetchData();
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -277,9 +385,8 @@ export default function AdminDashboard() {
         </button>
       </header>
 
-      {/* Sidebar Overlay (Mobile) */}
       {isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
@@ -293,38 +400,23 @@ export default function AdminDashboard() {
         <div className="p-6 hidden md:block">
           <h1 className="text-2xl font-bold text-primary font-headline italic">Admin Panel</h1>
         </div>
-        
+
         <nav className="flex-1 px-4 space-y-2 mt-4 md:mt-0">
-          <button
-            onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'dashboard' ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
-          >
-            <LayoutDashboard size={20} /> Dashboard
-          </button>
-          <button
-            onClick={() => { setActiveTab('categories'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'categories' ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
-          >
-            <Layers size={20} /> Categories
-          </button>
-          <button
-            onClick={() => { setActiveTab('items'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'items' ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
-          >
-            <Utensils size={20} /> Menu Items
-          </button>
-          <button
-            onClick={() => { setActiveTab('media'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'media' ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
-          >
-            <ImageIcon size={20} /> Media
-          </button>
-          <button
-            onClick={() => { setActiveTab('ticker'); setIsSidebarOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'ticker' ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
-          >
-            <Zap size={20} /> Scrolling Bar
-          </button>
+          {[
+            { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+            { key: 'categories', label: 'Categories', icon: <Layers size={20} /> },
+            { key: 'items', label: 'Menu Items', icon: <Utensils size={20} /> },
+            { key: 'media', label: 'Media', icon: <ImageIcon size={20} /> },
+            { key: 'ticker', label: 'Scrolling Bar', icon: <Zap size={20} /> },
+          ].map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => { setActiveTab(key as any); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === key ? 'bg-primary text-white' : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
+            >
+              {icon} {label}
+            </button>
+          ))}
         </nav>
 
         <div className="p-4 border-t border-stone-200 dark:border-stone-800 space-y-2">
@@ -345,6 +437,8 @@ export default function AdminDashboard() {
 
       {/* Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+
+        {/* Dashboard Tab */}
         {activeTab === 'dashboard' && stats && (
           <div className="space-y-8">
             <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Dashboard Overview</h2>
@@ -358,7 +452,6 @@ export default function AdminDashboard() {
                 <p className="text-5xl font-black text-primary">{stats.itemCount}</p>
               </div>
             </div>
-
             <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
               <div className="p-6 border-b border-stone-200 dark:border-stone-800">
                 <h3 className="text-xl font-bold text-stone-900 dark:text-white">Recently Added Items</h3>
@@ -366,11 +459,9 @@ export default function AdminDashboard() {
               <div className="divide-y divide-stone-200 dark:divide-stone-800">
                 {stats.recentItems.map((item) => (
                   <div key={item.id} className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div>
-                        <p className="font-bold text-stone-900 dark:text-white">{item.name}</p>
-                        <p className="text-sm text-stone-500">{item.category?.name}</p>
-                      </div>
+                    <div>
+                      <p className="font-bold text-stone-900 dark:text-white">{item.name}</p>
+                      <p className="text-sm text-stone-500">{item.category?.name}</p>
                     </div>
                     <p className="font-bold text-primary">₹{item.price}</p>
                   </div>
@@ -380,6 +471,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Categories Tab */}
         {activeTab === 'categories' && (
           <div className="space-y-8">
             <div className="flex justify-between items-center">
@@ -391,7 +483,6 @@ export default function AdminDashboard() {
                 <Plus size={20} /> Add Category
               </button>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {categories.map((cat) => (
                 <div key={cat.id} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
@@ -399,17 +490,24 @@ export default function AdminDashboard() {
                     <div>
                       <p className="text-xl font-bold text-stone-900 dark:text-white">{cat.name}</p>
                       <p className="text-sm text-stone-500">{cat._count?.items || 0} Items</p>
+                      {cat.subCategories && cat.subCategories.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {cat.subCategories.map(s => (
+                            <span key={s} className="text-[10px] font-bold uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleOpenCategoryModal(cat)}
-                        className="p-2 text-stone-400 hover:text-primary transition-colors"
-                      >
+                      <button onClick={() => handleOpenCategoryModal(cat)} className="p-2 text-stone-400 hover:text-primary transition-colors">
                         <Edit2 size={18} />
                       </button>
-                      <button
-                        onClick={() => handleDeleteCategory(cat.id)}
-                        className="p-2 text-stone-400 hover:text-red-500 transition-colors"
+                      <button 
+                        onClick={() => handleDeleteCategory(cat.id)} 
+                        disabled={deletingId === cat.id}
+                        className={`p-2 transition-colors ${deletingId === cat.id ? 'opacity-50 cursor-not-allowed' : 'text-stone-400 hover:text-red-500'}`}
                       >
                         <Trash2 size={18} />
                       </button>
@@ -426,6 +524,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Items Tab */}
         {activeTab === 'items' && (
           <div className="space-y-8">
             <div className="flex justify-between items-center">
@@ -437,7 +536,6 @@ export default function AdminDashboard() {
                 <Plus size={20} /> Add Item
               </button>
             </div>
-
             <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[600px]">
@@ -452,22 +550,18 @@ export default function AdminDashboard() {
                   <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
                     {items.map((item) => (
                       <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className="font-bold text-stone-900 dark:text-white">{item.name}</span>
-                        </td>
+                        <td className="px-6 py-4 font-bold text-stone-900 dark:text-white">{item.name}</td>
                         <td className="px-6 py-4 text-stone-600 dark:text-stone-400">{item.category?.name}</td>
                         <td className="px-6 py-4 font-bold text-primary">₹{item.price}</td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex justify-end gap-2">
-                            <button 
-                              onClick={() => handleOpenItemModal(item)}
-                              className="p-2 text-stone-400 hover:text-primary transition-colors"
-                            >
+                            <button onClick={() => handleOpenItemModal(item)} className="p-2 text-stone-400 hover:text-primary transition-colors">
                               <Edit2 size={18} />
                             </button>
-                            <button
-                              onClick={() => handleDeleteItem(item.id)}
-                              className="p-2 text-stone-400 hover:text-red-500 transition-colors"
+                            <button 
+                              onClick={() => handleDeleteItem(item.id)} 
+                              disabled={deletingId === item.id}
+                              className={`p-2 transition-colors ${deletingId === item.id ? 'opacity-50 cursor-not-allowed' : 'text-stone-400 hover:text-red-500'}`}
                             >
                               <Trash2 size={18} />
                             </button>
@@ -482,45 +576,51 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Media Tab */}
         {activeTab === 'media' && (
           <div className="space-y-12">
-            <div className="flex justify-between items-end">
-              <div>
-                <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Media Management</h2>
-                <p className="text-stone-500 text-sm mt-2">Manage the visual assets for your landing page and menu backgrounds.</p>
-              </div>
+            <div>
+              <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Media Management</h2>
+              <p className="text-stone-500 text-sm mt-2">Manage the visual assets for your landing page and menu backgrounds.</p>
             </div>
 
             <div className="grid grid-cols-1 gap-12">
-              {/* Hero Section Media */}
+              {/* Hero Section */}
               <div className="space-y-6">
-                <div className="border-b border-stone-200 dark:border-stone-800 pb-4 flex justify-between items-end">
-                  <div>
-                    <h3 className="text-xl font-bold text-stone-900 dark:text-white">Hero Section</h3>
-                    <p className="text-sm text-stone-500">The main visual for your landing page. Only one of each type is active.</p>
-                  </div>
+                <div className="border-b border-stone-200 dark:border-stone-800 pb-4">
+                  <h3 className="text-xl font-bold text-stone-900 dark:text-white">Hero Section</h3>
+                  <p className="text-sm text-stone-500">The main visual for your landing page. Only one of each type is active.</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {['hero_image', 'hero_video'].map((type) => {
+                  {(['hero_image', 'hero_video'] as const).map((type) => {
                     const m = media.find(item => item.type === type);
                     const duplicates = media.filter(item => item.type === type).slice(1);
-                    
                     return (
-                      <div key={type} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
+                      <div key={type} className={`bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border transition-all space-y-4 ${m?.isActive ? 'border-primary shadow-primary/10' : 'border-stone-200 dark:border-stone-800'}`}>
                         <div className="flex justify-between items-center">
                           <p className="font-bold uppercase tracking-widest text-xs text-primary">
                             {type === 'hero_video' ? 'Hero Video' : 'Hero Image'}
                           </p>
                           <div className="flex items-center gap-3">
                             {m ? (
-                              <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
+                              m.isActive ? (
+                                <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
+                              ) : (
+                                <button
+                                  onClick={() => handleActivateMedia(m.id)}
+                                  className="text-[10px] bg-stone-200 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-3 py-1 rounded-full font-bold uppercase hover:bg-primary hover:text-white transition-colors"
+                                >
+                                  Set as Active
+                                </button>
+                              )
                             ) : (
                               <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-1 rounded-full font-bold uppercase">Not Set</span>
                             )}
                             {m && (
                               <button 
-                                onClick={() => handleDeleteMedia(m.id)}
-                                className="p-1.5 text-stone-400 hover:text-red-500 transition-colors"
+                                onClick={() => handleDeleteMedia(m.id)} 
+                                disabled={deletingId === m.id}
+                                className={`p-1.5 transition-colors ${deletingId === m.id ? 'opacity-50 cursor-not-allowed' : 'text-stone-400 hover:text-red-500'}`}
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -535,10 +635,12 @@ export default function AdminDashboard() {
                               <img src={m.url} alt={type} className="w-full h-full object-cover" />
                             )
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-stone-400 text-xs italic">No {type.replace('hero_', '')} uploaded</div>
+                            <div className="w-full h-full flex items-center justify-center text-stone-400 text-xs italic">
+                              No {type.replace('hero_', '')} uploaded
+                            </div>
                           )}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <button 
+                            <button
                               onClick={() => m ? handleMediaChange(m.id, type) : handleAddMedia(type)}
                               className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold shadow-lg"
                             >
@@ -567,57 +669,51 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Specials Section */}
+              {/* Specials Posters Section */}
               <div className="space-y-6">
-                <div className="border-b border-stone-200 dark:border-stone-800 pb-4">
-                  <h3 className="text-xl font-bold text-stone-900 dark:text-white">Specials Section</h3>
-                  <p className="text-sm text-stone-500">Image displayed in the specials section on the homepage if it exists.</p>
+                <div className="border-b border-stone-200 dark:border-stone-800 pb-4 flex justify-between items-end">
+                  <div>
+                    <h3 className="text-xl font-bold text-stone-900 dark:text-white">Special Posters</h3>
+                    <p className="text-sm text-stone-500">Upload up to 3 A4 posters to display prominently on the homepage.</p>
+                  </div>
+                  {specials.length < 3 && (
+                    <button
+                      onClick={handleAddSpecial}
+                      className="bg-primary text-white px-4 py-2 rounded-lg font-bold shadow-lg text-sm flex items-center gap-2 hover:opacity-90 transition-all"
+                    >
+                      <Plus size={16} /> Upload Poster
+                    </button>
+                  )}
                 </div>
-                <div>
-                  {(() => {
-                    const specialsMedia = media.find(m => m.type === 'special_section');
-                    return (
-                      <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
+                
+                {specials.length === 0 ? (
+                  <div className="bg-white dark:bg-stone-900 p-8 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 text-center">
+                    <p className="text-stone-500 italic text-sm">No special posters uploaded. You can upload up to 3.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {specials.map((special, idx) => (
+                      <div key={special.id} className="bg-white dark:bg-stone-900 p-4 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
                         <div className="flex justify-between items-center">
-                          <p className="font-bold uppercase tracking-widest text-xs text-primary">Specials Image</p>
-                          <div className="flex items-center gap-3">
-                            {specialsMedia ? (
-                              <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
-                            ) : (
-                              <span className="text-[10px] bg-stone-100 text-stone-500 px-2 py-1 rounded-full font-bold uppercase">Not Set</span>
-                            )}
-                            {specialsMedia && (
-                              <button 
-                                onClick={() => handleDeleteMedia(specialsMedia.id)}
-                                className="p-1.5 text-stone-400 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            )}
-                          </div>
+                          <p className="font-bold uppercase tracking-widest text-xs text-primary">Poster {idx + 1}</p>
+                          <button 
+                            onClick={() => handleDeleteSpecial(special.id)} 
+                            disabled={deletingId === special.id}
+                            className={`p-1.5 transition-colors ${deletingId === special.id ? 'opacity-50 cursor-not-allowed' : 'text-stone-400 hover:text-red-500'}`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
-                        <div className="aspect-video rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800 relative group">
-                          {specialsMedia ? (
-                            <img src={specialsMedia.url} alt="Specials" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-stone-400 text-xs italic">No image uploaded</div>
-                          )}
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <button 
-                              onClick={() => specialsMedia ? handleMediaChange(specialsMedia.id, 'special_section') : handleAddMedia('special_section')}
-                              className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold shadow-lg"
-                            >
-                              {specialsMedia ? 'Change' : 'Upload'} Image
-                            </button>
-                          </div>
+                        <div className="aspect-[1/1.414] rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800 relative group border border-stone-200 dark:border-stone-700">
+                          <img src={special.imageUrl} alt={`Special Poster ${idx + 1}`} className="w-full h-full object-cover" />
                         </div>
                       </div>
-                    );
-                  })()}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Global Default Background */}
+              {/* Global Menu Background */}
               <div className="space-y-6">
                 <div className="border-b border-stone-200 dark:border-stone-800 pb-4">
                   <h3 className="text-xl font-bold text-stone-900 dark:text-white">Global Menu Background</h3>
@@ -626,7 +722,7 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {media.filter(m => m.type === 'menu_bg').map((m, idx) => (
                     <div key={m.id} className={cn(
-                      "bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border space-y-4 relative group",
+                      "bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border space-y-4",
                       idx === 0 ? "border-primary/30 ring-1 ring-primary/10" : "border-stone-200 dark:border-stone-800"
                     )}>
                       <div className="flex justify-between items-center">
@@ -635,10 +731,7 @@ export default function AdminDashboard() {
                           {idx === 0 && (
                             <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold uppercase">Active</span>
                           )}
-                          <button 
-                            onClick={() => handleDeleteMedia(m.id)}
-                            className="p-1.5 text-stone-400 hover:text-red-500 transition-colors"
-                          >
+                          <button onClick={() => handleDeleteMedia(m.id)} className="p-1.5 text-stone-400 hover:text-red-500 transition-colors">
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -646,10 +739,7 @@ export default function AdminDashboard() {
                       <div className="aspect-video rounded-2xl overflow-hidden bg-stone-100 dark:bg-stone-800 relative group">
                         <img src={m.url} alt={m.type} className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <button 
-                            onClick={() => handleMediaChange(m.id, m.type)}
-                            className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold shadow-lg"
-                          >
+                          <button onClick={() => handleMediaChange(m.id, m.type)} className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold shadow-lg">
                             Change
                           </button>
                         </div>
@@ -657,7 +747,7 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                   {media.filter(m => m.type === 'menu_bg').length === 0 && (
-                    <button 
+                    <button
                       onClick={() => handleAddMedia('menu_bg')}
                       className="aspect-video rounded-3xl border-2 border-dashed border-stone-200 dark:border-stone-800 flex flex-col items-center justify-center text-stone-400 hover:border-primary/50 hover:text-primary transition-all"
                     >
@@ -671,13 +761,12 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Ticker Tab */}
         {activeTab === 'ticker' && (
           <div className="space-y-8">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Scrolling Bar Management</h2>
-                <p className="text-stone-500 text-sm mt-2">Manage the text phrases that appear in the scrolling bar at the top of the homepage hero section.</p>
-              </div>
+            <div>
+              <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Scrolling Bar Management</h2>
+              <p className="text-stone-500 text-sm mt-2">Manage the text phrases that appear in the scrolling bar at the top of the homepage hero section.</p>
             </div>
 
             <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
@@ -686,18 +775,14 @@ export default function AdminDashboard() {
                 <div className="flex gap-3">
                   <input
                     type="text"
-                    value={newTickerItem}
-                    onChange={(e) => setNewTickerItem(e.target.value)}
+                    value={newTickerText}
+                    onChange={(e) => setNewTickerText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTicker()}
                     placeholder="Enter a new phrase..."
                     className="flex-1 px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
                   />
                   <button
-                    onClick={() => {
-                      if (newTickerItem.trim()) {
-                        setTickerItems([...tickerItems, newTickerItem.trim()]);
-                        setNewTickerItem('');
-                      }
-                    }}
+                    onClick={handleAddTicker}
                     className="bg-primary text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary/30 hover:opacity-90 transition-all"
                   >
                     <Plus size={20} /> Add
@@ -711,38 +796,32 @@ export default function AdminDashboard() {
                   <p className="text-stone-500 text-center py-8">No phrases added yet.</p>
                 ) : (
                   <div className="space-y-3">
-                    {tickerItems.map((item, index) => (
-                      <div key={index} className="flex items-center justify-between bg-stone-50 dark:bg-stone-800 p-4 rounded-xl border border-stone-200 dark:border-stone-700">
+                    {tickerItems.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between bg-stone-50 dark:bg-stone-800 p-4 rounded-xl border border-stone-200 dark:border-stone-700">
                         <div className="flex-1">
-                          {editingTickerIndex === index ? (
+                          {editingTickerId === item.id ? (
                             <input
                               type="text"
                               value={editingTickerValue}
                               onChange={(e) => setEditingTickerValue(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveTicker(item.id)}
                               className="w-full px-3 py-2 rounded-lg bg-white dark:bg-stone-700 border border-stone-300 dark:border-stone-600 focus:ring-2 focus:ring-primary outline-none dark:text-white"
                             />
                           ) : (
-                            <p className="text-stone-900 dark:text-white font-bold">{item}</p>
+                            <p className="text-stone-900 dark:text-white font-bold">{item.text}</p>
                           )}
                         </div>
                         <div className="flex gap-2 ml-4">
-                          {editingTickerIndex === index ? (
+                          {editingTickerId === item.id ? (
                             <>
                               <button
-                                onClick={() => {
-                                  if (editingTickerValue.trim()) {
-                                    const updated = [...tickerItems];
-                                    updated[index] = editingTickerValue.trim();
-                                    setTickerItems(updated);
-                                    setEditingTickerIndex(null);
-                                  }
-                                }}
+                                onClick={() => handleSaveTicker(item.id)}
                                 className="px-3 py-2 bg-green-500 text-white rounded-lg font-bold text-sm hover:bg-green-600 transition-all"
                               >
                                 Save
                               </button>
                               <button
-                                onClick={() => setEditingTickerIndex(null)}
+                                onClick={() => setEditingTickerId(null)}
                                 className="px-3 py-2 bg-stone-400 text-white rounded-lg font-bold text-sm hover:bg-stone-500 transition-all"
                               >
                                 Cancel
@@ -751,18 +830,13 @@ export default function AdminDashboard() {
                           ) : (
                             <>
                               <button
-                                onClick={() => {
-                                  setEditingTickerIndex(index);
-                                  setEditingTickerValue(item);
-                                }}
+                                onClick={() => { setEditingTickerId(item.id); setEditingTickerValue(item.text); }}
                                 className="p-2 text-stone-400 hover:text-primary transition-colors"
                               >
                                 <Edit2 size={18} />
                               </button>
                               <button
-                                onClick={() => {
-                                  setTickerItems(tickerItems.filter((_, i) => i !== index));
-                                }}
+                                onClick={() => handleDeleteTicker(item.id)}
                                 className="p-2 text-stone-400 hover:text-red-500 transition-colors"
                               >
                                 <Trash2 size={18} />
@@ -779,7 +853,7 @@ export default function AdminDashboard() {
 
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-6">
               <p className="text-sm text-blue-900 dark:text-blue-200">
-                <span className="font-bold">💡 Tip:</span> These phrases will appear in the scrolling bar at the top of the homepage hero section. They will repeat continuously as the ticker scrolls from right to left.
+                <span className="font-bold">Tip:</span> These phrases will appear in the scrolling bar at the top of the homepage hero section. They will repeat continuously as the ticker scrolls from right to left.
               </p>
             </div>
           </div>
@@ -816,17 +890,12 @@ export default function AdminDashboard() {
                           type="checkbox"
                           checked={categoryFormData.subCategories.includes(subCat)}
                           onChange={(e) => {
-                            if (e.target.checked) {
-                              setCategoryFormData({
-                                ...categoryFormData,
-                                subCategories: [...categoryFormData.subCategories, subCat],
-                              });
-                            } else {
-                              setCategoryFormData({
-                                ...categoryFormData,
-                                subCategories: categoryFormData.subCategories.filter(s => s !== subCat),
-                              });
-                            }
+                            setCategoryFormData({
+                              ...categoryFormData,
+                              subCategories: e.target.checked
+                                ? [...categoryFormData.subCategories, subCat]
+                                : categoryFormData.subCategories.filter(s => s !== subCat),
+                            });
                           }}
                           className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
                         />
@@ -854,9 +923,10 @@ export default function AdminDashboard() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-primary text-white px-6 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-primary/30 hover:opacity-90 transition-all"
+                    disabled={isSubmittingCategory}
+                    className="flex-1 bg-primary text-white px-6 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-primary/30 hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {editingCategory ? 'Update' : 'Create'}
+                    {isSubmittingCategory ? 'Saving...' : (editingCategory ? 'Update' : 'Create')}
                   </button>
                 </div>
               </form>
@@ -903,7 +973,7 @@ export default function AdminDashboard() {
                   <select
                     required
                     value={formData.categoryId}
-                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value, subCategory: '' })}
                     className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
                   >
                     {categories.map((cat) => (
@@ -911,14 +981,35 @@ export default function AdminDashboard() {
                     ))}
                   </select>
                 </div>
+                {(() => {
+                  const selectedCat = categories.find(c => c.id === formData.categoryId);
+                  if (!selectedCat?.subCategories?.length) return null;
+                  return (
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">
+                        Sub-Category <span className="text-stone-400 normal-case font-normal">(optional)</span>
+                      </label>
+                      <select
+                        value={formData.subCategory}
+                        onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                        className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white"
+                      >
+                        <option value="">— All (no sub-category) —</option>
+                        {selectedCat.subCategories.map(sub => (
+                          <option key={sub} value={sub}>{sub}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })()}
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Description</label>
                   <textarea
-                    required
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white resize-none"
                     rows={3}
+                    placeholder="Optional description..."
                   />
                 </div>
                 <div className="flex gap-4 pt-4">
@@ -931,15 +1022,17 @@ export default function AdminDashboard() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-primary text-white px-6 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-primary/30 hover:opacity-90 transition-all"
+                    disabled={isSubmittingItem}
+                    className="flex-1 bg-primary text-white px-6 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-primary/30 hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {editingItem ? 'Update Item' : 'Create Item'}
+                    {isSubmittingItem ? 'Saving...' : (editingItem ? 'Update Item' : 'Create Item')}
                   </button>
                 </div>
               </form>
             </div>
           </div>
         )}
+
       </main>
     </div>
   );

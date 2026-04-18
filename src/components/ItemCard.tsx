@@ -9,8 +9,11 @@ interface ItemCardProps {
 export const ItemCard: React.FC<ItemCardProps> = ({ item }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+      whileInView={{ opacity: 1, scale: 1 }}
       viewport={{ once: true }}
       className="group bg-white/80 dark:bg-stone-900/80 backdrop-blur-md rounded-2xl overflow-hidden shadow-lg border border-stone-200 dark:border-stone-800 p-8 hover:border-primary/50 transition-all duration-500"
     >
