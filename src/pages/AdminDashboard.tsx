@@ -45,6 +45,7 @@ export default function AdminDashboard() {
     price: '',
     categoryId: '',
     subCategory: '',
+    isHsmSignature: false,
   });
   const [categoryFormData, setCategoryFormData] = useState({
     name: '',
@@ -52,11 +53,21 @@ export default function AdminDashboard() {
     subCategories: [] as string[],
   });
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
+  const [newSubCatInput, setNewSubCatInput] = useState('');
   const [newTickerText, setNewTickerText] = useState('');
   const [editingTickerId, setEditingTickerId] = useState<string | null>(null);
   const [editingTickerValue, setEditingTickerValue] = useState('');
 
-  const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp', 'mushroom'] as const;
+  const SUB_CATEGORIES = ['Veg', 'paneer', 'egg', 'chicken', 'goat', 'fish', 'shrimp', 'mushroom'];
+
+  const handleAddCustomSubCat = () => {
+    const val = newSubCatInput.trim();
+    if (!val) return;
+    if (!categoryFormData.subCategories.includes(val)) {
+      setCategoryFormData(prev => ({ ...prev, subCategories: [...prev.subCategories, val] }));
+    }
+    setNewSubCatInput('');
+  };
 
   const api = authApi(token ?? '');
 
@@ -105,6 +116,7 @@ export default function AdminDashboard() {
       setEditingCategory(null);
       setCategoryFormData({ name: '', imageUrl: '', subCategories: [] });
     }
+    setNewSubCatInput('');
     setIsCategoryModalOpen(true);
   };
 
@@ -146,10 +158,11 @@ export default function AdminDashboard() {
         price: item.price.toString(),
         categoryId: item.categoryId,
         subCategory: item.subCategory ?? '',
+        isHsmSignature: item.isHsmSignature ?? false,
       });
     } else {
       setEditingItem(null);
-      setFormData({ name: '', description: '', price: '', categoryId: categories[0]?.id || '', subCategory: '' });
+      setFormData({ name: '', description: '', price: '', categoryId: categories[0]?.id || '', subCategory: '', isHsmSignature: false });
     }
     setIsItemModalOpen(true);
   };
@@ -162,6 +175,7 @@ export default function AdminDashboard() {
       price: formData.price,
       categoryId: formData.categoryId,
       subCategory: formData.subCategory || null,
+      isHsmSignature: formData.isHsmSignature,
     };
 
     setIsSubmittingItem(true);
@@ -463,7 +477,7 @@ export default function AdminDashboard() {
                       <p className="font-bold text-stone-900 dark:text-white">{item.name}</p>
                       <p className="text-sm text-stone-500">{item.category?.name}</p>
                     </div>
-                    <p className="font-bold text-primary">₹{item.price}</p>
+                    <p className="font-bold text-primary">${item.price}</p>
                   </div>
                 ))}
               </div>
@@ -552,7 +566,7 @@ export default function AdminDashboard() {
                       <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">
                         <td className="px-6 py-4 font-bold text-stone-900 dark:text-white">{item.name}</td>
                         <td className="px-6 py-4 text-stone-600 dark:text-stone-400">{item.category?.name}</td>
-                        <td className="px-6 py-4 font-bold text-primary">₹{item.price}</td>
+                        <td className="px-6 py-4 font-bold text-primary">${item.price}</td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex justify-end gap-2">
                             <button onClick={() => handleOpenItemModal(item)} className="p-2 text-stone-400 hover:text-primary transition-colors">
@@ -883,8 +897,8 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-3">Sub-Categories</label>
-                  <div className="space-y-3">
-                    {SUB_CATEGORIES.map((subCat) => (
+                  <div className="space-y-2 mb-3 max-h-48 overflow-y-auto pr-1">
+                    {[...new Set([...SUB_CATEGORIES, ...categoryFormData.subCategories])].map((subCat) => (
                       <label key={subCat} className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
@@ -902,6 +916,23 @@ export default function AdminDashboard() {
                         <span className="text-sm font-bold text-stone-700 dark:text-stone-300">{subCat}</span>
                       </label>
                     ))}
+                  </div>
+                  <div className="flex gap-2 pt-3 border-t border-stone-100 dark:border-stone-800">
+                    <input
+                      type="text"
+                      value={newSubCatInput}
+                      onChange={(e) => setNewSubCatInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomSubCat(); } }}
+                      placeholder="Add a new subcategory"
+                      className="flex-1 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 focus:ring-2 focus:ring-primary outline-none transition-all dark:text-white text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSubCat}
+                      className="px-4 py-2 bg-primary text-white rounded-lg font-bold text-sm hover:opacity-90 transition-all"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
                 <div>
@@ -958,7 +989,7 @@ export default function AdminDashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Price (₹)</label>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-stone-500 mb-2">Price ($)</label>
                     <input
                       required
                       type="number"
@@ -1012,6 +1043,22 @@ export default function AdminDashboard() {
                     placeholder="Optional description..."
                   />
                 </div>
+                <label className={`flex items-center justify-between gap-4 px-4 py-4 rounded-xl border cursor-pointer transition-all ${formData.isHsmSignature ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700' : 'bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700'}`}>
+                  <div>
+                    <p className="text-sm font-bold text-stone-800 dark:text-stone-200">⭐ Mark as HSM Signature</p>
+                    <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">Highlights this item with a Signature badge on the menu</p>
+                  </div>
+                  <div className="relative shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={formData.isHsmSignature}
+                      onChange={(e) => setFormData({ ...formData, isHsmSignature: e.target.checked })}
+                    />
+                    <div className={`w-11 h-6 rounded-full transition-colors ${formData.isHsmSignature ? 'bg-amber-500' : 'bg-stone-300 dark:bg-stone-600'}`} />
+                    <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.isHsmSignature ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </div>
+                </label>
                 <div className="flex gap-4 pt-4">
                   <button
                     type="button"

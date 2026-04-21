@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Category, Item, Media, Ticker, Special } from '../types';
 import { ItemCard } from '../components/ItemCard';
 import { CategoryNav } from '../components/CategoryNav';
-import { SubCategoryNav } from '../components/SubCategoryNav';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
 import { Moon, Sun, ChevronDown } from 'lucide-react';
@@ -45,27 +44,48 @@ export default function MenuView() {
     fetchData();
   }, []);
 
-  // Subcategory match uses the item's DB field — backend is the source of truth
-  const itemMatchesSubCategory = (item: Item, subCategory: string | null) => {
-    if (!subCategory) return true;
-    return item.subCategory === subCategory;
+  const [signatureFilter, setSignatureFilter] = useState(false);
+
+  const selectCategory = (categoryId: string | null) => {
+    setActiveCategory(categoryId);
+    setActiveSubCategory(null);
+    setSignatureFilter(false);
   };
 
-  const filteredItems = useMemo(() => items.filter((item) => {
-    const categoryMatch = activeCategory ? item.categoryId === activeCategory : true;
-    if (!categoryMatch) return false;
-    return itemMatchesSubCategory(item, activeSubCategory);
-  }), [items, activeCategory, activeSubCategory]);
+  const filteredItems = useMemo(() => {
+    const filtered = items.filter((item) => {
+      if (activeCategory && item.categoryId !== activeCategory) return false;
+      if (activeSubCategory && item.subCategory !== activeSubCategory) return false;
+      if (signatureFilter && !item.isHsmSignature) return false;
+      return true;
+    });
+    // Signature items always float to the top regardless of active filters
+    return [...filtered].sort((a, b) => (b.isHsmSignature ? 1 : 0) - (a.isHsmSignature ? 1 : 0));
+  }, [items, activeCategory, activeSubCategory, signatureFilter]);
 
   const activeCategoryData = useMemo(() => categories.find(c => c.id === activeCategory), [categories, activeCategory]);
   const activeSubCategories = useMemo(() => activeCategoryData?.subCategories ?? [], [activeCategoryData]);
 
-  const heroMedia = useMemo(() => 
-    media.find((m) => ['hero_image', 'hero_video'].includes(m.type) && m.isActive) || 
-    media.find((m) => ['hero_image', 'hero_video'].includes(m.type)), 
+  // Counts are scoped to the active category and NEVER change when filters are applied
+  const categoryItems = useMemo(() =>
+    activeCategory ? items.filter(i => i.categoryId === activeCategory) : [],
+  [items, activeCategory]);
+
+  const signatureCount = useMemo(() =>
+    categoryItems.filter(i => i.isHsmSignature).length,
+  [categoryItems]);
+
+  const subCategoryCount = useMemo(() =>
+    activeSubCategories.reduce<Record<string, number>>((acc, sub) => {
+      acc[sub] = categoryItems.filter(i => i.subCategory === sub).length;
+      return acc;
+    }, {}),
+  [categoryItems, activeSubCategories]);
+
+  const heroMedia = useMemo(() =>
+    media.find((m) => ['hero_image', 'hero_video'].includes(m.type) && m.isActive) ||
+    media.find((m) => ['hero_image', 'hero_video'].includes(m.type)),
   [media]);
-  
-  const specialSectionMedia = useMemo(() => media.find((m) => m.type === 'special_section'), [media]);
   const menuBg = useMemo(() => activeCategoryData?.imageUrl || media.find((m) => m.type === 'menu_bg')?.url, [activeCategoryData, media]);
 
   const scrollToMenu = () => {
@@ -246,17 +266,45 @@ export default function MenuView() {
             <CategoryNav
               categories={categories}
               activeCategory={activeCategory}
-              onSelect={(categoryId) => {
-                setActiveCategory(categoryId);
-                setActiveSubCategory(null);
-              }}
+              onSelect={selectCategory}
             />
-            {activeCategory && activeSubCategories.length > 0 && (
-              <SubCategoryNav
-                subCategories={activeSubCategories}
-                activeSubCategory={activeSubCategory}
-                onSelect={setActiveSubCategory}
-              />
+            {activeCategory && (activeSubCategories.length > 0 || signatureCount > 0) && (
+              <div className="bg-white/75 dark:bg-stone-950/75 backdrop-blur-md border-b border-stone-200 dark:border-stone-800">
+                <div className="max-w-7xl mx-auto px-4 flex items-center flex-nowrap gap-2 py-3 overflow-x-auto no-scrollbar scroll-smooth">
+                  {signatureCount > 0 && (
+                    <button
+                      type="button"
+                      aria-pressed={signatureFilter}
+                      onClick={() => setSignatureFilter(f => !f)}
+                      className={cn(
+                        'shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap tracking-wide transition-all',
+                        signatureFilter
+                          ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                          : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                      )}
+                    >
+                      ⭐ Signature ({signatureCount})
+                    </button>
+                  )}
+                  {activeSubCategories.map((sub) => (
+                    <button
+                      key={sub}
+                      type="button"
+                      aria-pressed={activeSubCategory === sub}
+                      onClick={() => setActiveSubCategory(activeSubCategory === sub ? null : sub)}
+                      className={cn(
+                        'shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold whitespace-nowrap uppercase tracking-wide transition-all',
+                        activeSubCategory === sub
+                          ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                          : 'bg-stone-100 dark:bg-stone-900 text-stone-600 dark:text-stone-400 hover:bg-stone-200 dark:hover:bg-stone-800'
+                      )}
+                    >
+                      {sub} ({subCategoryCount[sub] ?? 0})
+                    </button>
+                  ))}
+                  <div className="shrink-0 w-8 h-1" />
+                </div>
+              </div>
             )}
           </div>
 
@@ -273,8 +321,7 @@ export default function MenuView() {
                       key={category.id}
                       whileHover={{ y: -10 }}
                       onClick={() => {
-                        setActiveCategory(category.id);
-                        setActiveSubCategory(null);
+                        selectCategory(category.id);
                         scrollToMenu();
                       }}
                       className="group relative h-80 rounded-3xl overflow-hidden shadow-2xl text-left"
@@ -305,12 +352,10 @@ export default function MenuView() {
                 <div className="flex items-center justify-between">
                   <h2 className="text-4xl font-black text-stone-900 dark:text-white font-headline italic">
                     {activeCategoryData?.name}
+                    <span className="text-stone-400 dark:text-stone-500 font-bold text-2xl ml-2">({categoryItems.length})</span>
                   </h2>
                   <button
-                    onClick={() => {
-                      setActiveCategory(null);
-                      setActiveSubCategory(null);
-                    }}
+                    onClick={() => selectCategory(null)}
                     className="text-stone-500 hover:text-primary font-bold uppercase tracking-widest text-xs flex items-center gap-2"
                   >
                     Back to Categories
@@ -325,10 +370,16 @@ export default function MenuView() {
                     </AnimatePresence>
                   </motion.div>
                 ) : (
-                  <div className="text-center py-20">
-                    <p className="text-stone-500 dark:text-stone-400 text-xl">
-                      No items found{activeSubCategory ? ` for "${activeSubCategory}"` : ''} in this category.
-                    </p>
+                  <div className="text-center py-20 space-y-2">
+                    <p className="text-stone-500 dark:text-stone-400 text-xl">No items match the selected filters.</p>
+                    {(activeSubCategory || signatureFilter) && (
+                      <button
+                        onClick={() => { setActiveSubCategory(null); setSignatureFilter(false); }}
+                        className="text-primary font-bold text-sm underline underline-offset-4"
+                      >
+                        Clear filters
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

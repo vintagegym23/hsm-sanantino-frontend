@@ -15,6 +15,7 @@ export interface Item {
   price: number;
   categoryId: string;
   subCategory?: string;
+  isHsmSignature?: boolean;
   category?: Category;
 }
 
