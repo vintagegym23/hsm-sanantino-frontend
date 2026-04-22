@@ -231,12 +231,12 @@ export default function MenuView() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, amount: 0.2 }}
                   transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className="rounded-2xl overflow-hidden shadow-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 aspect-[1/1.414]"
+                  className="rounded-2xl overflow-hidden shadow-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900"
                 >
                   <img
                     src={special.imageUrl}
                     alt={`Special Poster ${index + 1}`}
-                    className="w-full h-full object-cover"
+                    className="w-full h-auto block"
                     referrerPolicy="no-referrer"
                   />
                 </motion.div>

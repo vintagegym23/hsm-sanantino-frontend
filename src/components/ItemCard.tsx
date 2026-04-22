@@ -9,6 +9,9 @@ interface ItemCardProps {
 export const ItemCard: React.FC<ItemCardProps> = ({ item }) => {
   const isSignature = item.isHsmSignature === true;
 
+  const VEG_SUBCATEGORIES = new Set(['veg', 'paneer', 'gobi', 'mushroom', 'tofu', 'soya', 'vegetables', 'vegetarian']);
+  const isVegSubCategory = (sub: string) => VEG_SUBCATEGORIES.has(sub.toLowerCase().trim());
+
   return (
     <motion.div
       layout
@@ -35,7 +38,11 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item }) => {
               </span>
             )}
             {item.subCategory && (
-              <span className="px-3 py-1 bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-[0.2em] rounded-full whitespace-nowrap shadow-sm">
+              <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] rounded-full whitespace-nowrap shadow-sm border ${
+                isVegSubCategory(item.subCategory)
+                  ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400'
+                  : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400'
+              }`}>
                 {item.subCategory}
               </span>
             )}
