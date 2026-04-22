@@ -3,6 +3,7 @@ export interface Category {
   name: string;
   imageUrl?: string;
   subCategories?: string[];
+  sortOrder?: number;
   _count?: {
     items: number;
   };

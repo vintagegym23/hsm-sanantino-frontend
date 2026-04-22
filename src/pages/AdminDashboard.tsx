@@ -17,7 +17,10 @@ import {
   Menu,
   X,
   Zap,
+  GripVertical,
+  ArrowUpDown,
 } from 'lucide-react';
+import { Reorder } from 'motion/react';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
 
@@ -54,6 +57,9 @@ export default function AdminDashboard() {
   });
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
   const [newSubCatInput, setNewSubCatInput] = useState('');
+  const [isReordering, setIsReordering] = useState(false);
+  const [reorderList, setReorderList] = useState<Category[]>([]);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [newTickerText, setNewTickerText] = useState('');
   const [editingTickerId, setEditingTickerId] = useState<string | null>(null);
   const [editingTickerValue, setEditingTickerValue] = useState('');
@@ -67,6 +73,34 @@ export default function AdminDashboard() {
       setCategoryFormData(prev => ({ ...prev, subCategories: [...prev.subCategories, val] }));
     }
     setNewSubCatInput('');
+  };
+
+  const handleStartReorder = () => {
+    setReorderList([...categories]);
+    setIsReordering(true);
+  };
+
+  const handleCancelReorder = () => {
+    setIsReordering(false);
+    setReorderList([]);
+  };
+
+  const handleSaveOrder = async () => {
+    setIsSavingOrder(true);
+    const previousCategories = [...categories];
+    try {
+      const order = reorderList.map((cat, idx) => ({ id: cat.id, sortOrder: idx }));
+      await api.patch('/api/categories/reorder', { order });
+      setCategories(reorderList);
+      setIsReordering(false);
+      setReorderList([]);
+      toast.success('Category order saved');
+    } catch (err) {
+      setCategories(previousCategories);
+      toast.error('Failed to save order — please try again');
+    } finally {
+      setIsSavingOrder(false);
+    }
   };
 
   const api = authApi(token ?? '');
@@ -488,53 +522,124 @@ export default function AdminDashboard() {
         {/* Categories Tab */}
         {activeTab === 'categories' && (
           <div className="space-y-8">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center flex-wrap gap-3">
               <h2 className="text-3xl font-bold text-stone-900 dark:text-white">Manage Categories</h2>
-              <button
-                onClick={() => handleOpenCategoryModal()}
-                className="bg-primary text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary/20"
-              >
-                <Plus size={20} /> Add Category
-              </button>
+              <div className="flex items-center gap-3">
+                {isReordering ? (
+                  <>
+                    <button
+                      onClick={handleCancelReorder}
+                      className="px-5 py-2.5 rounded-xl font-bold border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveOrder}
+                      disabled={isSavingOrder}
+                      className="bg-primary text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isSavingOrder ? 'Saving…' : 'Save Order'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleStartReorder}
+                      className="px-5 py-2.5 rounded-xl font-bold border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-all flex items-center gap-2"
+                    >
+                      <ArrowUpDown size={16} /> Reorder
+                    </button>
+                    <button
+                      onClick={() => handleOpenCategoryModal()}
+                      className="bg-primary text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary/20"
+                    >
+                      <Plus size={20} /> Add Category
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {categories.map((cat) => (
-                <div key={cat.id} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-xl font-bold text-stone-900 dark:text-white">{cat.name}</p>
-                      <p className="text-sm text-stone-500">{cat._count?.items || 0} Items</p>
+
+            {/* ── Reorder mode: drag list ── */}
+            {isReordering ? (
+              <div>
+                <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">
+                  Drag rows to reorder, then click <strong>Save Order</strong>.
+                </p>
+                <Reorder.Group
+                  axis="y"
+                  values={reorderList}
+                  onReorder={setReorderList}
+                  className="space-y-2"
+                >
+                  {reorderList.map((cat) => (
+                    <Reorder.Item
+                      key={cat.id}
+                      value={cat}
+                      className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl px-5 py-4 flex items-center gap-4 cursor-grab active:cursor-grabbing shadow-sm select-none"
+                    >
+                      <GripVertical size={20} className="text-stone-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-stone-900 dark:text-white truncate">{cat.name}</p>
+                        <p className="text-xs text-stone-500 mt-0.5">{cat._count?.items || 0} items</p>
+                      </div>
                       {cat.subCategories && cat.subCategories.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {cat.subCategories.map(s => (
+                        <div className="hidden md:flex flex-wrap gap-1 shrink-0">
+                          {cat.subCategories.slice(0, 3).map(s => (
                             <span key={s} className="text-[10px] font-bold uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                               {s}
                             </span>
                           ))}
+                          {cat.subCategories.length > 3 && (
+                            <span className="text-[10px] text-stone-400">+{cat.subCategories.length - 3}</span>
+                          )}
                         </div>
                       )}
+                    </Reorder.Item>
+                  ))}
+                </Reorder.Group>
+              </div>
+            ) : (
+              /* ── Normal mode: grid ── */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {categories.map((cat) => (
+                  <div key={cat.id} className="bg-white dark:bg-stone-900 p-6 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xl font-bold text-stone-900 dark:text-white">{cat.name}</p>
+                        <p className="text-sm text-stone-500">{cat._count?.items || 0} Items</p>
+                        {cat.subCategories && cat.subCategories.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {cat.subCategories.map(s => (
+                              <span key={s} className="text-[10px] font-bold uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleOpenCategoryModal(cat)} className="p-2 text-stone-400 hover:text-primary transition-colors">
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          disabled={deletingId === cat.id}
+                          className={`p-2 transition-colors ${deletingId === cat.id ? 'opacity-50 cursor-not-allowed' : 'text-stone-400 hover:text-red-500'}`}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleOpenCategoryModal(cat)} className="p-2 text-stone-400 hover:text-primary transition-colors">
-                        <Edit2 size={18} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteCategory(cat.id)} 
-                        disabled={deletingId === cat.id}
-                        className={`p-2 transition-colors ${deletingId === cat.id ? 'opacity-50 cursor-not-allowed' : 'text-stone-400 hover:text-red-500'}`}
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
+                    {cat.imageUrl && (
+                      <div className="aspect-video rounded-2xl overflow-hidden">
+                        <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover" />
+                      </div>
+                    )}
                   </div>
-                  {cat.imageUrl && (
-                    <div className="aspect-video rounded-2xl overflow-hidden">
-                      <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
